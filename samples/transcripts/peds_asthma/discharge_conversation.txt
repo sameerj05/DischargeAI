@@ -1,0 +1,20 @@
+[SYNTHETIC TEST PATIENT - NOT REAL PHI]
+[speech-to-text transcript, pediatric ER discharge, nurse and parent]
+
+NURSE: alright so leo is ready to go home. he's seven, and he came in last night with an asthma attack, an asthma exacerbation.
+MOM: yeah it was scary.
+NURSE: so he's gonna keep taking the steroid, the prednisolone liquid. it's thirty milligrams once a day, wait, no, let me look, he's twenty kilos so it's twenty milligrams once a day with breakfast, for four more days.
+MOM: four more days, okay.
+NURSE: and the albuterol inhaler, two puffs with the spacer every four hours for the next two days, even if he seems fine. after that only when he needs it, like if he's coughing or wheezing.
+MOM: does he use the spacer every time?
+NURSE: yes every time with the spacer.
+NURSE: then we're starting a new one, fluticasone, forty four micrograms, two puffs twice a day, morning and night, every day. this one is a controller, it prevents attacks. have him rinse his mouth and spit after he uses it.
+MOM: and the albuterol, is that new or is that his old one?
+NURSE: he already had albuterol at home so just keep using that one.
+NURSE: see his pediatrician, doctor nguyen, in two to three days. they'll call you to set it up. and nobody smokes around him, in the house or in the car.
+MOM: he has school tomorrow.
+NURSE: he can go back to school when he's not needing the albuterol more than every four hours. I'll give you a school note.
+MOM: should he get a flu shot?
+NURSE: yes, ask for it at the pediatrician visit.
+NURSE: so come back to the ER or call nine one one if he needs albuterol more often than every four hours, if you see the skin pulling in between his ribs when he breathes, if his lips look blue or gray, or if he can't talk in full sentences.
+MOM: okay thank you.

@@ -1,0 +1,11 @@
+SYNTHETIC TEST PATIENT - NOT REAL PHI
+Nursing discharge education - R. Lopez, RN, 10/9/2026
+
+Pt and daughter educated on the following, verbalized understanding:
+- Check blood sugar before breakfast and dinner, keep a log, bring log to PCP visit
+- Incentive spirometer 10x/hr while awake
+- Drink plenty of fluids
+- No heavy lifting >10 lb for 1 week
+- Return to ED for: SOB, fever >101F, chest pain, BG <70 that does not improve after eating sugar, confusion
+
+Pt prefers to be called "Jane". Daughter will pick up prescriptions from CVS on Main St today.

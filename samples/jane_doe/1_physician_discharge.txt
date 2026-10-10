@@ -1,0 +1,23 @@
+SYNTHETIC TEST PATIENT - NOT REAL PHI
+Physician discharge note - Dr. A. Kim, Hospitalist
+
+Patient: Jane Doe, 67F. Admitted 10/5/2026, discharged 10/9/2026.
+
+Dx:
+1. Community-acquired pneumonia, RLL
+2. Type 2 diabetes mellitus, A1c 8.4
+3. Hypertension
+
+Hospital course: Treated w/ IV ceftriaxone + azithromycin, transitioned to PO. Afebrile x48h, SpO2 95% RA at d/c.
+
+Discharge meds:
+- Amoxicillin-clavulanate 875 mg PO BID x 5 more days (last dose 10/14/2026)
+- Metformin 1000 mg PO BID - CONTINUE
+- Lisinopril 10 mg PO daily - CONTINUE
+- STOP glipizide (hypoglycemia episode inpatient, BG 58 on 10/7)
+- Acetaminophen 650 mg PO q6h PRN fever/pain, max 3 g/day
+
+Follow-up:
+- PCP Dr. Patel, 10/16/2026 at 9:30 AM
+- Repeat chest X-ray in 6 weeks, PCP to order
+- Diabetes education class, Rutgers Health Endocrine Clinic, 10/23/2026 at 2:00 PM

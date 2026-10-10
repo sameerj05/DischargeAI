@@ -1,0 +1,17 @@
+[SYNTHETIC TEST PATIENT - NOT REAL PHI]
+[speech-to-text transcript, bedside discharge teaching, 3 speakers]
+
+NURSE: okay miss maria so before you go I want to go over a few things with you and your daughter.
+PATIENT: okay.
+NURSE: so the big one is the weight. every morning after you go to the bathroom before you eat breakfast you step on the scale and you write it down.
+DAUGHTER: we have a scale at home yeah.
+NURSE: perfect. and the water pill, the furosemide, you're gonna pee a lot so take it in the morning not at night.
+DAUGHTER: um she has bad knee pain, can she take advil for that?
+NURSE: no, no advil, no aleve, none of those, they're hard on her kidneys and her heart right now. tylenol is okay for the knee, just don't go over three thousand milligrams in a day.
+DAUGHTER: okay. and what about her potassium pills, the ones she had at home before, does she still take those?
+NURSE: hmm that's a good question I'm not sure, I'll have to ask the doctor about that one.
+PATIENT: and the blood thinner I keep taking?
+NURSE: yes keep taking the apixaban. tell your dentist and all your doctors you're on a blood thinner. if you have bleeding that won't stop, or black poop, or pink or red pee, call your doctor.
+NURSE: and get help right away, call nine one one, if you have chest pain, if you can't breathe especially when you're lying down flat, if you pass out, or if you get confused.
+DAUGHTER: got it.
+NURSE: and the pharmacy is gonna deliver all the new medicines to the house tomorrow morning.
