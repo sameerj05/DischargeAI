@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 
-type IconName = "bell" | "chevron" | "clock" | "document" | "microphone" | "patients" | "search" | "send" | "stop"
+type IconName = "bell" | "chevron" | "clock" | "document" | "microphone" | "patients" | "pdf" | "search" | "send" | "stop" | "upload"
 
 const iconPaths: Record<IconName, ReactNode> = {
   bell: (
@@ -47,9 +47,22 @@ const iconPaths: Record<IconName, ReactNode> = {
     </>
   ),
   stop: <rect x="7" y="7" width="10" height="10" rx="2" />,
+  pdf: (
+    <>
+      <path d="M6 3h9l3 3v15H6z" />
+      <path d="M9 13h2c1 0 2-.9 2-2s-1-2-2-2H9v6M15 9h2M15 12h2" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" x2="12" y1="3" y2="15" />
+    </>
+  ),
 }
 
-function Icon({ name, size = 20 }: { name: IconName size?: number }) {
+function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return (
     <svg
       aria-hidden="true"
@@ -91,11 +104,13 @@ function NavItem({
 }
 
 export default function App() {
-  const [mode, setMode] = useState<"write" | "dictate">("write")
+  const [mode, setMode] = useState<"write" | "dictate" | "pdf">("write")
   const [note, setNote] = useState("")
   const [recording, setRecording] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const [saved, setSaved] = useState(false)
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [pdfDragging, setPdfDragging] = useState(false)
 
   useEffect(() => {
     if (!recording) return
@@ -226,6 +241,16 @@ export default function App() {
                     <Icon name="microphone" size={17} />
                     Dictate
                   </button>
+                  <button
+                    aria-selected={mode === "pdf"}
+                    className={mode === "pdf" ? "segment-active" : ""}
+                    onClick={() => setMode("pdf")}
+                    role="tab"
+                    type="button"
+                  >
+                    <Icon name="pdf" size={17} />
+                    PDF
+                  </button>
                 </div>
                 <span className="autosave">
                   {saved ? "Writeup sent" : "Autosaves securely"}
@@ -249,7 +274,7 @@ export default function App() {
                     <span>Last edit just now</span>
                   </div>
                 </div>
-              ) : (
+              ) : mode === "dictate" ? (
                 <div
                   className={`dictation-panel ${
                     recording ? "is-recording" : ""
@@ -292,6 +317,69 @@ export default function App() {
                   <span className="recording-time">
                     {recording ? formattedTime : "Microphone access required"}
                   </span>
+                </div>
+              ) : (
+                <div
+                  className={`pdf-panel ${pdfDragging ? "pdf-dragging" : ""}`}
+                  onDragEnter={(e) => { e.preventDefault(); setPdfDragging(true) }}
+                  onDragLeave={(e) => { e.preventDefault(); setPdfDragging(false) }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setPdfDragging(false)
+                    const file = e.dataTransfer.files[0]
+                    if (file?.type === "application/pdf") {
+                      setPdfFile(file)
+                      setSaved(false)
+                    }
+                  }}
+                >
+                  {pdfFile ? (
+                    <div className="pdf-selected">
+                      <div className="pdf-icon-wrap">
+                        <Icon name="pdf" size={28} />
+                      </div>
+                      <div className="pdf-file-info">
+                        <strong>{pdfFile.name}</strong>
+                        <span>{(pdfFile.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                      <button
+                        aria-label="Remove PDF"
+                        className="pdf-remove"
+                        onClick={() => setPdfFile(null)}
+                        type="button"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="pdf-upload-icon">
+                        <Icon name="upload" size={26} />
+                      </div>
+                      <p className="pdf-upload-label">Drop a PDF here</p>
+                      <p className="pdf-upload-help">
+                        Or click below to browse. We'll extract the relevant
+                        visit information automatically.
+                      </p>
+                      <label className="pdf-browse-button">
+                        Browse file
+                        <input
+                          accept="application/pdf"
+                          aria-label="Upload PDF"
+                          hidden
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              setPdfFile(file)
+                              setSaved(false)
+                            }
+                          }}
+                          type="file"
+                        />
+                      </label>
+                    </>
+                  )}
                 </div>
               )}
 

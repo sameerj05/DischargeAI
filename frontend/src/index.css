@@ -727,3 +727,137 @@ h1 {
   }
 
 }
+
+/* ── PDF panel ── */
+.pdf-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 38px 24px;
+  text-align: center;
+  border: 2px dashed #d4ddd9;
+  border-radius: 10px;
+  margin: 20px;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.pdf-dragging {
+  border-color: #4f7e71;
+  background: #f0f7f4;
+}
+
+.pdf-upload-icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border-radius: 14px;
+  background: #eef2f0;
+  color: #4f7e71;
+  margin-bottom: 16px;
+}
+
+.pdf-upload-label {
+  margin-bottom: 7px;
+  color: #263a34;
+  font-family: "Manrope", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.pdf-upload-help {
+  max-width: 360px;
+  margin-bottom: 22px;
+  color: #788580;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.pdf-browse-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #dbe3df;
+  border-radius: 9px;
+  background: #fff;
+  color: #495752;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 160ms ease;
+}
+
+.pdf-browse-button:hover {
+  border-color: #bfcac5;
+  background: #f7faf8;
+}
+
+.pdf-selected {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 440px;
+  border: 1px solid #d8e3de;
+  border-radius: 12px;
+  background: #fff;
+  padding: 16px 18px;
+  box-shadow: 0 2px 8px rgba(37, 59, 52, 0.04);
+}
+
+.pdf-icon-wrap {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  background: #fef2ec;
+  color: #b85a2e;
+}
+
+.pdf-file-info {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+
+.pdf-file-info strong {
+  overflow: hidden;
+  color: #26342f;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-file-info span {
+  color: #8b9692;
+  font-size: 11px;
+}
+
+.pdf-remove {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border: 1px solid #e2e8e4;
+  border-radius: 7px;
+  background: #f5f7f5;
+  color: #8b9692;
+  font-size: 11px;
+  transition: 160ms ease;
+}
+
+.pdf-remove:hover {
+  border-color: #c8d0cc;
+  background: #fff;
+  color: #4a5652;
+}
