@@ -1,18 +1,27 @@
 openapi: 3.0.3
 info:
   title: DischargeAI backend
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Discharge summaries in (text, PDF or dictated audio), plain-language patient links out, data
-    self-destructs 30 days after creation. Provider endpoints need the `x-provider-key` header. Patient
-    endpoints are authenticated by the unguessable 22-character link id and need no header.
+    self-destructs 30 days after creation. Provider endpoints need the `x-provider-key` header (the
+    diagram's "light provider auth"). Patient endpoints are authenticated by the unguessable
+    22-character link id (the token in `/p/:token`) and need no header.
+
+    Two shapes of the same record: `GET /summary` and `GET /translate` return the richer summary
+    (summary, diagnoses, New/Keep/Stop medication cards, checklist, tiered return precautions,
+    questions to ask); `GET /p/:token` returns the team diagram's fixed per-language contract
+    `{ steps, medications, followUps, warnings }` with `meta` beside it. Both come from one loader.
 servers:
   - url: http://localhost:4000
 tags:
   - name: provider
   - name: patient
+  - name: pipeline
+    description: Lane 3 of the team diagram (Person C).
   - name: admin
     description: Only mounted when DEMO_MODE=true.
+  - name: meta
 components:
   securitySchemes:
     providerKey:
@@ -24,8 +33,14 @@ components:
       name: link
       in: query
       required: true
-      description: The 22-character link id from the patient's email.
+      description: The 22-character link id from the patient's email (the token of /p/:token).
       schema: { type: string, pattern: "^[A-Za-z0-9_-]{22}$" }
+    language:
+      name: language
+      in: query
+      required: false
+      description: Name or BCP-47 code from /languages (Spanish, es, Mandarin, zh, Arabic, ar, ...). Languages picked at ingest are served from the store; any other supported language is translated on first request and cached.
+      schema: { type: string }
   schemas:
     Error:
       type: object
@@ -61,7 +76,7 @@ components:
       type: object
       required: [name, dose, howOften, why]
       properties:
-        name: { type: string, description: Verbatim from the source }
+        name: { type: string, description: Verbatim from the source, never translated }
         dose: { type: string, description: Verbatim from the source; empty if none }
         howOften: { type: string }
         why: { type: string }
@@ -91,6 +106,7 @@ components:
         field: { type: string }
         value: { oneOf: [{ type: string }, { type: number }] }
     SimplifiedSummary:
+      description: The richer shape (what the simplifier returns and the backend stores).
       type: object
       required: [readingLevel, language, summary, diagnoses, medications, checklist, returnPrecautions, followUps, questionsToAsk]
       properties:
@@ -108,6 +124,7 @@ components:
         medications:
           type: object
           required: [new, continue, stop]
+          description: New / Keep / Stop medication cards
           properties:
             new: { type: array, items: { $ref: "#/components/schemas/Medication" } }
             continue: { type: array, items: { $ref: "#/components/schemas/Medication" } }
@@ -130,12 +147,105 @@ components:
               when: { type: string }
               why: { type: string }
         questionsToAsk: { type: array, items: { type: string } }
+    Step:
+      type: object
+      required: [id, text, category]
+      properties:
+        id: { type: string, description: Stable id; POST /checklist/complete uses it }
+        text: { type: string }
+        category: { type: string, enum: [med, appointment, referral, vital, lab, lifestyle] }
+        due: { type: string }
+    AiMedication:
+      type: object
+      required: [name, dose, howOften, status, why]
+      properties:
+        name: { type: string, description: Verbatim, never translated }
+        dose: { type: string, description: Verbatim; empty for stopped drugs }
+        howOften: { type: string, description: Empty for stopped drugs }
+        status: { type: string, enum: [new, continue, stop] }
+        why: { type: string }
+        startDate: { type: string }
+    AiWarning:
+      type: object
+      required: [tier, text]
+      properties:
+        tier: { type: string, enum: [call911, er, clinic] }
+        text: { type: string }
+    AiOutput:
+      description: |
+        The team diagram's fixed per-language contract (lane 3 output, lane 1 input). Published as
+        /contracts/ai-output.schema.json and /contracts/ai-output.ts. The four keys are always present;
+        the richer fields ride along as optional extras.
+      type: object
+      required: [language, readingLevel, steps, medications, followUps, warnings]
+      properties:
+        language: { type: string }
+        readingLevel: { type: string, enum: [grade5] }
+        steps: { type: array, items: { $ref: "#/components/schemas/Step" } }
+        medications: { type: array, items: { $ref: "#/components/schemas/AiMedication" } }
+        followUps:
+          type: array
+          items:
+            type: object
+            required: [who, when, why]
+            properties:
+              who: { type: string }
+              when: { type: string }
+              why: { type: string }
+        warnings: { type: array, items: { $ref: "#/components/schemas/AiWarning" }, description: Return precautions by tier plus any safety notice the patient must act on }
+        summary: { type: string }
+        diagnoses: { type: array, items: { type: object, properties: { plain: { type: string }, clinical: { type: string } } } }
+        checklist: { type: array, items: { $ref: "#/components/schemas/ChecklistItem" } }
+        questionsToAsk: { type: array, items: { type: string } }
     ChecklistState:
       type: object
       properties:
         itemId: { type: string }
         completed: { type: boolean }
         updatedAt: { type: string, format: date-time }
+    SafetyChecks:
+      type: object
+      properties:
+        fidelity: { type: string, enum: [passed, failed], description: Every medication name and numeric dose in the output appears in the source }
+        readabilityGrade: { type: number }
+        warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }
+        backTranslationCheck: { type: string, enum: [passed, mismatches_found] }
+        translationWarnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }
+    PatientViewMeta:
+      type: object
+      properties:
+        status: { type: string, enum: [ready, needs_review] }
+        needsReview: { type: boolean }
+        expiresAt: { type: string, format: date-time }
+        daysLeft: { type: integer }
+        createdAt: { type: string, format: date-time }
+        language: { type: string }
+        languageName: { type: string }
+        fromCache: { type: boolean, description: "true when served from the store (English, or a language translated at synthesis or on an earlier request)" }
+        translatedAt: { type: string, format: date-time }
+        languages:
+          type: object
+          properties:
+            ready: { type: array, items: { type: string }, description: "en plus every language already stored for this link" }
+            supported: { type: array, items: { type: string } }
+        checklistState: { type: array, items: { $ref: "#/components/schemas/ChecklistState" } }
+        safetyChecks: { $ref: "#/components/schemas/SafetyChecks" }
+        provenance:
+          type: object
+          properties:
+            provider: { type: string }
+            model: { type: string }
+            inputKind: { type: string, enum: [text, pdf, audio] }
+            sourceChars: { type: integer }
+            stages: { type: array, items: { type: string } }
+            synthesisCount: { type: integer }
+    PatientView:
+      allOf:
+        - $ref: "#/components/schemas/AiOutput"
+        - type: object
+          required: [meta]
+          properties:
+            meta: { $ref: "#/components/schemas/PatientViewMeta" }
     SummaryResponse:
       allOf:
         - $ref: "#/components/schemas/SimplifiedSummary"
@@ -148,6 +258,7 @@ components:
             warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }
             needsReview: { type: boolean }
             checklistState: { type: array, items: { $ref: "#/components/schemas/ChecklistState" } }
+            readyLanguages: { type: array, items: { type: string } }
             verification:
               type: object
               properties:
@@ -157,6 +268,7 @@ components:
                 readabilityGrade: { type: number }
                 sourceChars: { type: integer }
                 inputKind: { type: string, enum: [text, pdf, audio] }
+                synthesisCount: { type: integer }
     TranslateResponse:
       allOf:
         - $ref: "#/components/schemas/SimplifiedSummary"
@@ -167,6 +279,8 @@ components:
             daysLeft: { type: integer }
             warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }
             needsReview: { type: boolean }
+            checklistState: { type: array, items: { $ref: "#/components/schemas/ChecklistState" } }
+            readyLanguages: { type: array, items: { type: string } }
             verification:
               type: object
               properties:
@@ -174,32 +288,177 @@ components:
                 model: { type: string }
                 backTranslationCheck: { type: string, enum: [passed, mismatches_found] }
                 translatedAt: { type: string, format: date-time }
+    PipelineMeta:
+      type: object
+      properties:
+        provider: { type: string }
+        model: { type: string }
+        usage: { type: object, properties: { inputTokens: { type: integer }, outputTokens: { type: integer }, totalTokens: { type: integer } } }
+        latencyMs: { type: integer }
+        fixture: { type: string }
+        sourceChars: { type: integer }
+        inputKind: { type: string, enum: [text, audio] }
+        languages: { type: array, items: { type: string } }
+        unsupportedLanguages: { type: array, items: { type: string } }
+        stages: { type: array, items: { type: string } }
+        safetyChecks:
+          type: object
+          properties:
+            stage: { type: string }
+            fidelity: { type: string, enum: [passed, failed] }
+            readabilityGrade: { type: number }
+            warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }
+            patientNoticeAdded: { type: boolean }
+        translations:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              provider: { type: string }
+              model: { type: string }
+              backTranslationCheck: { type: string, enum: [passed, mismatches_found] }
+              warningCount: { type: integer }
+    SynthesizeResponse:
+      type: object
+      properties:
+        perLanguage:
+          type: object
+          description: One contract object per language; en always present
+          additionalProperties: { $ref: "#/components/schemas/AiOutput" }
+        meta: { $ref: "#/components/schemas/PipelineMeta" }
+        stored:
+          nullable: true
+          type: object
+          description: null for a dry run; what was written when linkId was given
+          properties:
+            linkRef: { type: string }
+            status: { type: string, enum: [ready, needs_review] }
+            documents: { type: array, items: { type: string } }
+            staleTranslationsDeleted: { type: integer }
+            synthesisCount: { type: integer }
+            jobId: { type: string }
+            expiresAt: { type: string, format: date-time }
     Job:
       type: object
       properties:
         jobId: { type: string }
-        stage: { type: string, enum: [received, extracting, transcribing, simplifying, stored, emailing, done, needs_review, failed] }
+        stage: { type: string, enum: [received, extracting, transcribing, simplifying, checking, translating, stored, emailing, done, needs_review, failed] }
         inputKind: { type: string, enum: [text, pdf, audio] }
         error: { type: string, nullable: true }
         warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }
-        meta: { type: object, additionalProperties: true }
+        meta: { type: object, additionalProperties: true, description: provider, model, usage, languages, stages, fidelity, audio key, ... never PHI }
         linkIdHash: { type: string }
+        linkRef: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     AuditEvent:
       type: object
       properties:
         id: { type: integer }
-        event: { type: string }
+        event: { type: string, description: "link.created, job.stage, email.sent, email.queued, summary.viewed, translation.created, translation.viewed, checklist.updated, link.expired, key.destroyed, record.deleted, audio.stored, audio.deleted, link.purged, record.synthesized, synthesize.run, clock.advanced, purge.run" }
         actor: { type: string, enum: [provider, patient, system] }
         at: { type: string, format: date-time }
-        details: { type: object, additionalProperties: true, description: Never contains PHI }
+        details: { type: object, additionalProperties: true, description: Never contains PHI. Deletion receipts carry receipt=true, the table or bucket, the uid or key, the document, the reason and the job. }
+    PurgeReport:
+      type: object
+      properties:
+        ranAt: { type: string }
+        linksPurged: { type: integer }
+        keysDestroyed: { type: integer }
+        documentsDeleted: { type: integer }
+        audioDeleted: { type: integer }
+        orphanDocumentsDeleted: { type: integer }
+        orphanAudioDeleted: { type: integer }
+        receipts:
+          type: array
+          items:
+            type: object
+            properties:
+              event: { type: string, enum: [key.destroyed, record.deleted, audio.deleted] }
+              linkRef: { type: string }
+              what: { type: string }
+        purged:
+          type: array
+          items:
+            type: object
+            properties:
+              linkIdHashPrefix: { type: string }
+              expiresAt: { type: string }
+              documentsDeleted: { type: integer }
+              audioDeleted: { type: boolean }
+    Health:
+      type: object
+      properties:
+        ok: { type: boolean }
+        clock: { type: object, properties: { now: { type: string }, offsetDays: { type: number } } }
+        linkTtlDays: { type: integer }
+        demoMode: { type: boolean }
+        config:
+          type: object
+          description: Where the infrastructure config came from. Names only, never values.
+          properties:
+            source: { type: string, enum: [env, secret, env+secret, none] }
+            secretLoaded: { type: boolean }
+            secretArn: { type: string }
+            appliedFromSecret: { type: array, items: { type: string } }
+            keptFromEnv: { type: array, items: { type: string } }
+            reason: { type: string, enum: [disabled, no_credentials, timeout, error] }
+        sql:
+          type: object
+          properties:
+            dialect: { type: string, enum: [sqlite, mysql] }
+            requested: { type: string, enum: [sqlite, mysql] }
+            target: { type: string, description: "file path, or mysql://user@host:port/db (no password)" }
+            fallback: { nullable: true, type: object, properties: { from: { type: string }, reason: { type: string } } }
+        audio:
+          type: object
+          properties:
+            store: { type: string, enum: [local, s3] }
+            location: { type: string, description: bucket name or directory }
+            requested: { type: string, enum: [local, s3] }
+            fallback: { nullable: true, type: object, properties: { from: { type: string }, bucket: { type: string }, reason: { type: string } } }
+        providers:
+          type: object
+          properties:
+            llm: { type: string }
+            llmModel: { type: string }
+            transcribe: { type: string }
+            docStore: { type: string, enum: [local, dynamo] }
+            docTable: { type: string }
+            docHashKey: { type: string }
+            audioStore: { type: string }
+            email: { type: string }
+            emailQueue: { type: string }
+            sql: { type: string }
+        queue: { type: object, properties: { pending: { type: integer } } }
 paths:
   /health:
     get:
-      summary: Liveness, app clock and active providers
+      tags: [meta]
+      summary: Liveness, app clock, config source, SQL / document / audio stores and providers
       responses:
-        "200": { description: OK }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+  /contracts:
+    get:
+      tags: [meta]
+      summary: The published lane-3 contract files
+      responses:
+        "200": { description: "{ files: [/contracts/ai-output.schema.json, /contracts/ai-output.ts], source }" }
+  /contracts/{file}:
+    get:
+      tags: [meta]
+      summary: ai-output.schema.json (JSON Schema 2020-12) or ai-output.ts (TypeScript types); no auth, no data
+      parameters:
+        - { name: file, in: path, required: true, schema: { type: string, enum: [ai-output.schema.json, ai-output.ts] } }
+      responses:
+        "200": { description: The file }
+        "404": { description: Unknown file }
+  /openapi.json:
+    get:
+      tags: [meta]
+      summary: This document as JSON (Swagger UI at /docs)
+      responses:
+        "200": { description: OpenAPI document }
   /patients:
     get:
       tags: [provider]
@@ -209,7 +468,7 @@ paths:
         - name: q
           in: query
           schema: { type: string }
-          description: Case-insensitive substring over first name, last name, email, phone
+          description: Case-insensitive substring over first name, last name, full name, email, phone
       responses:
         "200":
           description: Patients
@@ -248,6 +507,11 @@ paths:
       tags: [provider]
       security: [{ providerKey: [] }]
       summary: Ingest a discharge summary (text, PDF or audio); returns 202 before any AI call runs
+      description: |
+        Async pipeline: extract (PDF) or transcribe (audio) -> simplify -> safety check -> translate the
+        picked languages -> store raw + simplified + translations on the link's discharge-summaries item
+        (every document encrypted with the per-link key, `expiresAt` = now + 30 days) -> email the patient
+        the link (and the caregiver only when caregiverApproved=true) -> audit.
       requestBody:
         required: true
         content:
@@ -259,10 +523,11 @@ paths:
                 patientId: { type: string }
                 text: { type: string, description: Pasted EMR text }
                 file: { type: string, format: binary, description: PDF }
-                audio: { type: string, format: binary, description: Dictation (wav, mp3, m4a, webm, ogg, flac) }
-                language: { type: string, description: Patient language preference (name or code) }
+                audio: { type: string, format: binary, description: Dictation (wav, mp3, m4a, webm, ogg, flac); stored sealed in the audio bucket, transcribed, then simplified }
+                language: { type: string, description: Patient language preference (name or code); translated at synthesis unless English }
+                languages: { type: string, description: "More languages to translate at synthesis, comma-separated or repeated (es,zh,ar). Any other supported language is translated on first request." }
                 caregiverEmail: { type: string, format: email }
-                caregiverApproved: { type: boolean, description: Caregiver gets the link only when true }
+                caregiverApproved: { type: boolean, description: Caregiver gets the link only when true (the advisors' consent step) }
       responses:
         "202":
           description: Accepted; pipeline runs asynchronously
@@ -272,13 +537,44 @@ paths:
                 type: object
                 properties:
                   jobId: { type: string }
-                  linkId: { type: string }
+                  linkId: { type: string, description: The raw link id; appears only here, in the email and on the patient row }
                   link: { type: string, description: "${PATIENT_APP_URL}/s/${linkId}" }
+                  patientUrl: { type: string, description: "/p/${linkId}" }
                   expiresAt: { type: string, format: date-time, description: createdAt + 30 days exactly }
                   statusUrl: { type: string }
                   stage: { type: string }
-        "400": { description: "empty_input, multiple_inputs, or validation error" }
+                  language: { type: string, nullable: true }
+                  synthesisLanguages: { type: array, items: { type: string } }
+        "400": { description: "empty_input, multiple_inputs, unsupported_language, or validation error" }
         "404": { description: patient_not_found }
+  /synthesize:
+    post:
+      tags: [pipeline, provider]
+      security: [{ providerKey: [] }]
+      summary: Run the lane-3 pipeline (simplify -> safety checks -> translate) and return the fixed JSON per language
+      description: |
+        `{ text, languages? }` is a dry run: nothing is stored. `{ linkId, languages?, text? }` re-synthesizes
+        a record: runs on its stored clinician text (or the new text, which replaces it), overwrites the
+        simplified and translation documents, deletes translations that were not regenerated (with
+        deletion receipts), adds the languages to the link's synthesis set. One call after a teammate
+        improves a prompt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string }
+                linkId: { type: string }
+                languages: { type: array, items: { type: string } }
+                language: { type: string }
+      responses:
+        "200": { description: Pipeline output, content: { application/json: { schema: { $ref: "#/components/schemas/SynthesizeResponse" } } } }
+        "400": { description: "empty_input, invalid_link or unsupported_language" }
+        "404": { description: link_not_found }
+        "409": { description: "source_missing: the record has no stored clinician text yet" }
+        "410": { description: link_expired or link_purged }
   /jobs/{jobId}:
     get:
       tags: [provider]
@@ -293,7 +589,7 @@ paths:
     get:
       tags: [provider]
       security: [{ providerKey: [] }]
-      summary: Event trail for a link (no PHI)
+      summary: Event trail for a link with its deletion receipts pulled out (no PHI)
       parameters: [{ $ref: "#/components/parameters/link" }]
       responses:
         "200":
@@ -313,22 +609,46 @@ paths:
                       expiresAt: { type: string }
                       keyDestroyed: { type: boolean }
                       lastViewedAt: { type: string, nullable: true }
+                      languages: { type: array, items: { type: string } }
                   events: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } }
+                  deletionReceipts: { type: array, items: { $ref: "#/components/schemas/AuditEvent" }, description: "key.destroyed, record.deleted, audio.deleted rows: the day-30 proof" }
+  /audit/receipts:
+    get:
+      tags: [provider]
+      security: [{ providerKey: [] }]
+      summary: Every deletion receipt in the log, all links
+      responses:
+        "200": { description: "{ count, receipts: AuditEvent[] }" }
+  /p/{token}:
+    get:
+      tags: [patient]
+      summary: The diagram's secure-link read, the fixed per-language contract with meta beside it
+      parameters:
+        - { name: token, in: path, required: true, description: The 22-character link id, schema: { type: string, pattern: "^[A-Za-z0-9_-]{22}$" } }
+        - $ref: "#/components/parameters/language"
+      responses:
+        "200": { description: Patient view, content: { application/json: { schema: { $ref: "#/components/schemas/PatientView" } } } }
+        "400": { description: invalid_link or unsupported_language }
+        "404": { description: link_not_found }
+        "410": { description: link_expired or link_purged (checked at read time against the app clock, independently of the purge job) }
+        "425": { description: "processing; body carries { stage, jobId }" }
   /summary:
     get:
       tags: [patient]
-      summary: The plain-language summary, with the expiry stated upfront
-      parameters: [{ $ref: "#/components/parameters/link" }]
+      summary: The plain-language summary (richer shape), with the expiry stated upfront
+      parameters:
+        - $ref: "#/components/parameters/link"
+        - $ref: "#/components/parameters/language"
       responses:
-        "200": { description: Summary, content: { application/json: { schema: { $ref: "#/components/schemas/SummaryResponse" } } } }
-        "400": { description: invalid_link }
+        "200": { description: Summary (English) or translation (other language) in the richer shape, content: { application/json: { schema: { $ref: "#/components/schemas/SummaryResponse" } } } }
+        "400": { description: invalid_link or unsupported_language }
         "404": { description: link_not_found }
         "410": { description: link_expired or link_purged }
         "425": { description: "processing; body carries { stage }" }
   /languages:
     get:
       tags: [patient]
-      summary: Languages /translate accepts
+      summary: Languages /translate, /summary and /p/:token accept; the diagram's three synthesis targets
       responses:
         "200":
           description: Languages
@@ -345,10 +665,12 @@ paths:
                         code: { type: string }
                         name: { type: string }
                         nativeName: { type: string }
+                  synthesisTargets: { type: array, items: { type: string }, description: "[es, zh, ar]" }
   /translate:
     get:
       tags: [patient]
-      summary: Translate the summary on demand (cached per language; medications stay verbatim)
+      summary: Translate the summary on demand (stored per language; medications stay verbatim)
+      description: Served from the store when the language was translated at synthesis or on an earlier request (`fromCache` true), else translated now by the translate stage, back-translation-checked, stored and returned. Same loader as /p/:token?language=.
       parameters:
         - $ref: "#/components/parameters/link"
         - name: language
@@ -368,11 +690,11 @@ paths:
       summary: Checklist items and the patient's check-offs
       parameters: [{ $ref: "#/components/parameters/link" }]
       responses:
-        "200": { description: Items and state }
+        "200": { description: "{ items: ChecklistItem[], state: ChecklistState[] }" }
   /checklist/complete:
     post:
       tags: [patient]
-      summary: Persist a check-off
+      summary: Persist a check-off (the advisors' checklist)
       requestBody:
         required: true
         content:
@@ -401,7 +723,7 @@ paths:
     post:
       tags: [admin]
       security: [{ providerKey: [] }]
-      summary: Shift the app clock (DEMO_MODE only)
+      summary: Shift the app clock so day 30 arrives on stage (DEMO_MODE only)
       requestBody:
         required: true
         content:
@@ -424,24 +746,10 @@ paths:
     post:
       tags: [admin]
       security: [{ providerKey: [] }]
-      summary: Run the purge job now (DEMO_MODE only)
+      summary: Run the purge job now (DEMO_MODE only); it also runs every PURGE_INTERVAL_MS
       responses:
         "200":
-          description: What was purged
+          description: What was purged, with one receipt per key, document and audio object
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  ranAt: { type: string }
-                  linksPurged: { type: integer }
-                  documentsDeleted: { type: integer }
-                  orphanDocumentsDeleted: { type: integer }
-                  purged:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        linkIdHashPrefix: { type: string }
-                        expiresAt: { type: string }
-                        documentsDeleted: { type: integer }
+              schema: { $ref: "#/components/schemas/PurgeReport" }

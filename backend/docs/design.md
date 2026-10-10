@@ -1,212 +1,176 @@
-# DischargeAI backend: design (Kiro design doc)
+# DischargeAI backend: design (Kiro design doc), branch `alt-backend`
 
 ## Architecture
 
 ```
- Provider app (teammates, Vite/React)             Patient phone (teammates)
-          |  x-provider-key                                 |  link id only
-          v                                                 v
- +------------------------------------------------------------------------+
- |  Express 5 + zod  (backend/src/app.ts)                                 |
- |  /patients  /ingest  /jobs/:id  /audit  /admin/*   /summary  /translate |
- |  /languages  /checklist/complete  /health  /docs  /openapi.json        |
- +-----------+-----------------------+---------------------+--------------+
-             |                       |                     |
-   +---------v--------+   +----------v-----------+   +-----v-------------------+
-   | SQL (better-     |   | Pipeline (p-queue,   |   | DocumentStore           |
-   | sqlite3 default, |   | persisted in `jobs`) |   |  LocalDocumentStore     |
-   | pg via           |   |  extract (pdf-parse) |   |   (SQLite `documents`)  |
-   | DATABASE_URL)    |   |  transcribe (agent)  |   |  DynamoDocumentStore    |
-   |  patients        |   |  simplify (agent)    |   |   (lib-dynamodb, TTL on |
-   |  links (enc_key) |   |  fidelity check      |   |    expiresAt)           |
-   |  jobs            |   |  encrypt + store     |   +-------------------------+
-   |  audit_log       |   |  email (nodemailer)  |
-   |  checklist_state |   |  audit               |   +-------------------------+
-   |  documents(local)|   +----------+-----------+   | Agents (src/agents)     |
-   +------------------+              |               |  SimplifierAgent        |
-                                     |               |   bedrock | anthropic | |
-   +------------------+              |               |   offline               |
-   | Clock + Purge    |<-------------+               |  TranslatorAgent        |
-   |  app clock,      |                              |   bedrock | anthropic | |
-   |  DEMO_MODE       |                              |   offline               |
-   |  advance, purge  |                              |  TranscriberAgent       |
-   |  interval        |                              |   aws (Transcribe Med)  |
-   +------------------+                              |   | offline             |
-                                                     +-------------------------+
-   Email transports: console (default) | smtp | ses (@aws-sdk/client-sesv2)
-   Optional queue:   EMAIL_QUEUE=sqs -> scripts/email-worker.ts (also Lambda handler)
+ Provider app (lane 1)                               Patient phone (lane 1)
+        |  x-provider-key                                   |  link id only
+        v                                                   v
+ +--------------------------------------------------------------------------------+
+ |  Express 5 + zod  (src/app.ts)                                                  |
+ |  /patients  /ingest  /synthesize  /jobs/:id  /audit  /audit/receipts  /admin/*   |
+ |  /p/:token  /summary  /translate  /languages  /checklist  /health  /docs         |
+ +----------+-----------------------+----------------------+-----------------------+
+            |                       |                      |
+ +----------v---------+   +---------v----------+   +-------v---------------------+
+ | SQL  (src/db)      |   | Lane-3 pipeline    |   | Document store (src/docstore)|
+ |  sqlite (default)  |   | (src/agents/       |   |  DynamoDB discharge-summaries|
+ |  mysql: RDS        |   |  pipeline.ts)      |   |   hash key uid, TTL expiresAt|
+ |  MariaDB patients  |   |  transcribe        |   |  SQL twin discharge_summaries|
+ |  patients          |   |  simplify          |   +------------------------------+
+ |  links (enc_key)   |   |  safetyCheck       |   | Audio store (src/audiostore) |
+ |  jobs              |   |  translate         |   |  S3 emraudio-rh (SSE, 30-day |
+ |  audit_log         |   +---------+----------+   |   lifecycle) or local dir    |
+ |  checklist_state   |             |              +------------------------------+
+ +--------------------+             |
+ +--------------------+   +---------v----------+   Config bootstrap (src/config/secrets.ts):
+ | Clock + purge job  |   | Agents             |   Secrets Manager hackhealth/secret fills
+ |  DEMO_MODE clock   |   |  bedrock | anthropic|  MYSQL_* and DYNAMO_* when credentials
+ |  advance, purge    |   |  | offline          |  resolve; env always wins; values never logged
+ +--------------------+   +--------------------+
+ Email: console (default) | smtp | ses, optional EMAIL_QUEUE=sqs -> scripts/email-worker.ts (Lambda handler too)
 ```
+
+## Boot sequence (`src/context.ts`)
+
+1. `bootstrapSecrets(env)`: when `SECRETS_BOOTSTRAP=auto` and `AWS_SECRET_ARN` is set (default: the team secret), `GetSecretValue` with an 8 s timeout. Keys `mysql-host/port/user/password/db` and `dynamodb-table/table-pk` fill the env vars that are still empty. No credentials, a timeout or an error: the app stays local and logs the reason (names only).
+2. `loadConfig(env)`: zod-validated `Config`; `DATABASE_URL=mysql://...` fills `MYSQL_*`.
+3. `connectSql(config)`: `SQL_DRIVER=auto` picks MariaDB when `MYSQL_HOST` is known, probes it (`CREATE DATABASE IF NOT EXISTS`, `SELECT 1`, 5 s connect timeout) and falls back to SQLite with the reason recorded; `sqlite` or `mysql` force one. Then `migrate(db)` runs `migrations/<dialect>/*.sql` once each.
+4. Repos, `createDocumentStore(config, db, resolveDocStore(...))` (`auto` = DynamoDB when the secret loaded or `DYNAMO_ENDPOINT` is set), `selectAudioStore(config, { secretLoaded })` (`auto` = the bucket when the secret loaded and HeadBucket succeeds).
+5. Seed the six synthetic patients when the table is empty, build the agents from `LLM_PROVIDER` / `TRANSCRIBE_PROVIDER`, compose the pipeline, build the mailer, start the job queue, re-enqueue unfinished jobs.
+
+`GET /health` reports every choice: `config.source`, `sql.{dialect, requested, fallback}`, `audio.{store, requested, fallback}`, `providers.{docStore, docTable, docHashKey, ...}`.
 
 ## Module layout (`backend/`)
 
 ```
 backend/
-  package.json            type: module, scripts: dev, start, test, demo, seed, build, create-table
-  tsconfig.json           ES2022, NodeNext, strict
-  openapi.yaml            served at /docs
-  docker-compose.yml      amazon/dynamodb-local on :8000
-  .env.example            placeholders only
-  .gitignore              .env, data/, node_modules, *.db, coverage
+  package.json            scripts: dev, start, test, test:contract, typecheck, demo, seed, setup-dynamo,
+                          ensure-s3-lifecycle, live-infra-check, live-ingest, email-worker, sync-contracts
+  openapi.yaml            served at /docs and /openapi.json
+  docker-compose.yml      amazon/dynamodb-local on :8000 (scripts/dynamodb-local.sh runs the jar without Docker)
+  .env.example            every variable with a comment, placeholders only
+  certs/global-bundle.pem the RDS CA bundle (AWS connection step 1)
+  contracts/              ai-output.schema.json, ai-output.ts (generated by scripts/sync-contracts.ts)
   src/
-    index.ts              boot: migrate, seed, start purge timer, listen
-    app.ts                buildApp(deps): express app with routes mounted
-    config.ts             zod-validated env -> Config
-    logger.ts             pino with redaction; no PHI
-    clock.ts              Clock { now(): Date; advanceDays(n) } (DEMO_MODE only)
+    index.ts              boot and listen
+    app.ts                buildApp(ctx): routes, auth prefixes, rate limit, error handler
+    context.ts            createContext(): the boot sequence above; AppContext for routes and jobs
+    config.ts             Config schema; resolveSqlDriver, resolveDocStore
+    config/secrets.ts     Secrets Manager bootstrap
+    clock.ts logger.ts errors.ts languages.ts dotenv.ts
     db/
-      index.ts            openDb(config) -> better-sqlite3 or pg adapter
-      migrate.ts          runs migrations/*.sql in order, records in schema_migrations
-      migrations/0001_init.sql
-      repos/patients.ts, links.ts, jobs.ts, audit.ts, checklist.ts
-    crypto/
-      linkId.ts           randomBytes(16) -> base64url; sha256 hash
-      envelope.ts         aes-256-gcm encrypt/decrypt with per-link key; keyVersion
+      index.ts            Db interface, SqliteDb, connectSql (fallback)
+      mysql.ts            MysqlDb over mysql2 (pool, TLS, ON DUPLICATE KEY UPDATE, statement splitter)
+      migrate.ts          per-dialect migrations
+      migrations/sqlite/0001_init.sql 0002_discharge_records.sql 0003_discharge_summaries.sql
+      migrations/mysql/0001_init.sql
+      repos/patients.ts links.ts jobs.ts audit.ts checklist.ts
+      seed.ts
+    crypto/linkId.ts envelope.ts
     docstore/
-      types.ts            DocumentStore interface + DocItem
-      local.ts            LocalDocumentStore (SQLite)
-      dynamo.ts           DynamoDocumentStore (lib-dynamodb)
-      index.ts            factory by DOC_STORE
-    extract/
-      pdf.ts              pdf-parse PDFParse.getText, fallback pdfjs-dist legacy
-      text.ts             normalize whitespace, strip page markers
+      types.ts            DocItem { uid, doc, ... }, DocumentStore, DOC names, uidFor
+      dynamo.ts           one item per link, one attribute per document (UpdateItem SET / REMOVE)
+      local.ts            SQL twin discharge_summaries (uid, doc) rows
+      secure.ts           seal / open around the store; AAD uid|doc|keyVersion
+    audiostore/
+      types.ts local.ts s3.ts (SSE, HeadBucket probe, lifecycle rule helpers) secure.ts index.ts (selectAudioStore)
     agents/
-      types.ts            SimplifiedSummary zod schema + TS types, TranslatedSummary
-      simplifier.ts       SimplifierAgent interface + factory
-      translator.ts       TranslatorAgent interface + factory
-      transcriber.ts      TranscriberAgent interface + factory
-      bedrock/converse.ts shared Converse tool-JSON helper (schema -> toolConfig -> toolUse.input -> zod)
-      bedrock/simplifier.ts, bedrock/translator.ts
-      anthropic/simplifier.ts, anthropic/translator.ts   (@anthropic-ai/sdk, output_config json_schema)
-      offline/simplifier.ts, offline/translator.ts, offline/transcriber.ts, offline/fixtures.ts
-      aws/transcriber.ts  Transcribe Medical: S3 put -> StartMedicalTranscriptionJob -> poll -> fetch transcript JSON
-      prompts/simplify.ts, prompts/translate.ts
-    verify/
-      fidelity.ts         medication name + numeric dose presence check, unit normalization
-      backtranslate.ts    diff numbers and drug names between original and back-translation
-      readability.ts      text-readability fleschKincaidGrade on summary (reported, not enforced)
-    pipeline/
-      queue.ts            p-queue concurrency 1, resumes `jobs` not in a terminal stage at boot
-      ingestJob.ts        the stage machine
-      purge.ts            purge job (interval + on demand)
-    email/
-      mailer.ts           nodemailer transport factory: console | smtp | ses
-      queue.ts            SQS producer when EMAIL_QUEUE=sqs
-      templates.ts        plain-text message: link + expiry only
-    routes/
-      health.ts patients.ts ingest.ts jobs.ts summary.ts translate.ts languages.ts checklist.ts audit.ts admin.ts docs.ts
-    middleware/
-      providerAuth.ts     x-provider-key check (timing-safe compare)
-      errors.ts           zod -> 400, AppError -> status, else 500 (Express 5 async-aware)
-      upload.ts           multer memoryStorage, 15 MB, fields file|audio
+      pipeline.ts         four stage interfaces, composePipeline, createPipeline, runPipeline
+      aiOutput.ts         the fixed per-language contract (zod), toAiOutput projection, patient notice
+      types.ts simplifier.ts translator.ts transcriber.ts
+      bedrock/converse.ts simplifier.ts translator.ts
+      anthropic/client.ts simplifier.ts translator.ts
+      offline/fixtures.ts rules.ts simplifier.ts translator.ts transcriber.ts
+      aws/transcriber.ts  Transcribe Medical
+      prompts/simplify.ts translate.ts
+    verify/fidelity.ts backtranslate.ts readability.ts
+    extract/pdf.ts text.ts
+    pipeline/queue.ts ingestJob.ts purge.ts
+    email/mailer.ts queue.ts templates.ts
+    routes/health.ts contracts.ts patients.ts ingest.ts synthesize.ts jobs.ts audit.ts admin.ts
+           linkAccess.ts patientView.ts patientLink.ts summary.ts translate.ts checklist.ts
+    middleware/providerAuth.ts rateLimit.ts upload.ts errors.ts
   fixtures/
-    discharge-summaries/example-1-chf.txt ... example-5-endocarditis.txt
-    discharge-summaries/example-1-chf.pdf  (generated from the txt for the PDF test)
-    offline/simplified/example-1.json ... example-5.json
-    offline/translations/example-1.es.json
-    offline/transcripts/dictation-1.json
-    live-samples/example-1-chf.bedrock.<modelId>.<date>.json
+    discharge-summaries/  the five examples (txt), example-1-chf.pdf, the handout PDF
+    offline/simplified/   example-1..5.json
+    offline/translations/ example-1.es.json example-1.zh.json example-1.ar.json
+    offline/transcripts/  dictation-1.json
+    live-samples/         example-1-chf.bedrock.<model>.<date>.json, infra-check.<date>.json
     patients.seed.json
-  scripts/
-    demo.sh  seed.ts  create-dynamo-table.ts  email-worker.ts  live-ingest.ts
-  test/
-    patients.test.ts ingest-text.test.ts ingest-pdf.test.ts translate-cache.test.ts expiry-purge.test.ts
-    crypto.test.ts fidelity.test.ts auth.test.ts checklist.test.ts
-  docs/
-    spec.md design.md tasks.md research.md
+  scripts/ demo.sh seed.ts setup-dynamo.ts ensure-s3-lifecycle.ts fetch-rds-bundle.sh live-infra-check.ts
+           live-ingest.ts email-worker.ts dynamodb-local.sh make-fixture-pdf.ts sync-contracts.ts
+  test/    19 files, 88 tests (see docs/tasks.md)
 ```
 
 ## Data model
 
-SQL (SQLite file `backend/data/app.db` by default; Postgres via `DATABASE_URL` with the same DDL using portable types):
+SQL, the same tables on both dialects (`migrations/sqlite/` grows by migration; `migrations/mysql/0001_init.sql` is the final schema in MySQL types: VARCHAR keys, VARBINARY/LONGBLOB, TINYINT booleans, BIGINT epoch seconds, inline indexes so it runs on MariaDB and MySQL alike):
 
-- `patients(id TEXT PK, first_name, last_name, date_of_birth, zip_code, email, phone, active_link_id TEXT NULL, active_link_expires_at TEXT NULL, created_at TEXT)`. `active_link_id` stores the raw id only because the provider UI must render the link; it is cleared at purge.
-- `links(link_id_hash TEXT PK, patient_id TEXT FK, status TEXT CHECK(pending|ready|needs_review|expired|purged), created_at TEXT, expires_at TEXT, key_version INTEGER, enc_key BLOB NULL, last_viewed_at TEXT NULL, language TEXT NULL, caregiver_email TEXT NULL, caregiver_approved INTEGER)`. `expires_at = created_at + 30 days` computed in code from the app clock, not by SQL now().
-- `jobs(id TEXT PK, link_id_hash TEXT FK, stage TEXT, error TEXT NULL, warnings TEXT (JSON), created_at, updated_at)`.
-- `audit_log(id INTEGER PK, event TEXT, link_id_hash TEXT NULL, actor TEXT CHECK(provider|patient|system), at TEXT, details TEXT (JSON, no PHI))`.
-- `checklist_state(link_id_hash TEXT, item_id TEXT, completed INTEGER, updated_at TEXT, PK(link_id_hash, item_id))`.
-- `documents(pk TEXT, sk TEXT, ciphertext BLOB, iv BLOB, tag BLOB, key_version INTEGER, expires_at INTEGER, created_at TEXT, PK(pk, sk))` used only by `LocalDocumentStore`.
-- `schema_migrations(name TEXT PK, applied_at TEXT)`.
+- `patients(id, first_name, last_name, date_of_birth, zip_code, email, phone, preferred_language, active_link_id, active_link_expires_at, created_at)`.
+- `links(link_id_hash PK, patient_id, status, created_at, expires_at, key_version, enc_key, last_viewed_at, language, languages JSON, caregiver_email, caregiver_approved)`. `expires_at = created_at + 30 days` from the app clock.
+- `jobs(id, link_id_hash, stage, input_kind, error, warnings JSON, meta JSON, created_at, updated_at)`.
+- `audit_log(id, event, link_id_hash, actor, at, details JSON)`; details never carry PHI (the repo strips known PHI keys defensively).
+- `checklist_state(link_id_hash, item_id, completed, updated_at)`.
+- `discharge_summaries(uid, doc, ciphertext, iv, tag, key_version, expires_at, created_at)`: the SQL twin of the DynamoDB table.
+- `schema_migrations(name, applied_at)`.
 
-Document store items (both implementations):
+The one SQL statement whose syntax differs is the upsert: `Db.upsert()` writes `ON CONFLICT ... DO UPDATE` on SQLite and `ON DUPLICATE KEY UPDATE col = VALUES(col)` on MySQL. Everything else is the shared subset (`?` placeholders, `CONCAT`, `LIMIT ?`).
+
+DynamoDB `discharge-summaries` (from the secret: table `dynamodb-table`, key `dynamodb-table-pk`):
 
 ```
-{ pk: "link#<linkId>", sk: "raw" | "simplified" | "translation#<langCode>",
-  ciphertext: Buffer, iv: Buffer(12), tag: Buffer(16), keyVersion: 1,
-  expiresAt: <epoch seconds>, createdAt: ISO }
+uid        S   "link#<sha256(linkId)>"                 hash key, no sort key
+expiresAt  N   epoch seconds                           TTL attribute, written on every put
+createdAt  S   first write     updatedAt S  last write
+raw | simplified | translation#<lang>   M   { ciphertext B, iv B, tag B, keyVersion N, createdAt S }
 ```
 
-DynamoDB: table `DYNAMO_TABLE` with `pk` (S, HASH) and `sk` (S, RANGE), `BillingMode: PAY_PER_REQUEST`, TTL enabled on `expiresAt` (Number, epoch seconds). Verified against DynamoDB Local 1.25.1 in this container on 2026-10-10 (see research.md section 4.2).
+One item per link. `put` is `UpdateItem SET #doc = :payload, expiresAt = :exp, createdAt = if_not_exists(createdAt, :now), updatedAt = :now`; `get` is `GetItem` with a projection on one document; `list` is one `GetItem`; `delete` is `UpdateItem REMOVE #doc` (conditioned on the item existing so it never creates one) and the item is dropped when no document is left; `deleteAll` is one `DeleteItem`; `listExpired` is a `Scan` on `expiresAt <= now` for the purge backstop. Chosen over one item per document because a single hash key cannot `Query` by prefix, and one item per link makes the per-language read one call and the purge one delete. Verified live on 10 Oct 2026 (`fixtures/live-samples/infra-check.2026-10-10.json`) and the client is faked in `test/docstore.test.ts`.
 
-The `pk` uses the raw link id, not the hash, because the document store is only ever addressed by a caller who already holds the raw id, and the ciphertext is useless without `links.enc_key`. SQL stores only the hash so a database dump does not reveal usable links.
+Audio: `audio/<linkIdHash>` in `emraudio-rh` with `ServerSideEncryption: AES256`, object metadata (clip content type, key version, expiry, created) and the tag `expiresAt=<epoch>`; or `<hash>.bin` + `<hash>.json` under `AUDIO_DIR`. The bucket's lifecycle rule `autodelete` (30 days, whole bucket) is the backstop; `scripts/ensure-s3-lifecycle.ts` adds `dischargeai-audio-expire-30-days` only on a bucket without such a rule.
 
 ## Crypto design
 
-- Link id: 16 random bytes, base64url (22 chars). Hash: sha256 hex. Lookup by hash. The raw id appears only in the 202 response, the email and `patients.active_link_id`.
-- Per-link data key: 32 random bytes stored in `links.enc_key`. Each payload: AES-256-GCM, fresh 12-byte IV, 16-byte auth tag, AAD = `pk|sk|keyVersion`. Verified with Node `crypto.createCipheriv/createDecipheriv` in the smoke test.
-- Purge sets `enc_key = NULL` first (crypto-shredding), then deletes document items. If the delete lags or DynamoDB TTL lags (AWS states deletion happens "typically within a few days" of expiry), the ciphertext is already unreadable. Read paths also compare `expires_at` with the app clock and return 410 before touching the store.
-- `KEY_VERSION` env allows a future KMS-wrapped key without changing the item shape.
+- Link id: 16 random bytes, base64url (22 chars). Hash: SHA-256 hex, the only thing SQL stores. The raw id appears in the 202 response, the email and `patients.active_link_id` (cleared at purge).
+- Per-link data key: 32 random bytes in `links.enc_key`. Each payload: AES-256-GCM, fresh 12-byte IV, 16-byte tag, AAD `uid|doc|keyVersion` for documents and `audio|hash|keyVersion` for clips.
+- Purge sets `enc_key = NULL` first (crypto-shredding), then deletes documents and audio with one receipt each. Read paths return `410` from the clock before touching any store.
 
-## Pipeline (stage machine)
+## Pipeline (lane 3) and the ingest stage machine
 
 ```
-received -> extracting (pdf) | transcribing (audio) -> simplifying -> stored -> emailing -> done
-                                                       \-> needs_review (fidelity warnings; still stored and emailed, flagged)
+received -> extracting (pdf) | transcribing (audio) -> simplifying -> checking -> translating (per picked language)
+         -> stored -> emailing -> done | needs_review
    any stage --error--> failed
 ```
 
-- `p-queue` with concurrency 1 (ESM-only package; the project is ESM). On boot, any job whose stage is not `done|failed|needs_review` is re-enqueued.
-- Fidelity check (deterministic, after the LLM): for each medication in `new|continue|stop`, the name must appear in the source (case-insensitive; hyphen and slash tolerant); each numeric dose token (`40 mg`, `875/125 mg`, `0.4 mg`) must appear after unit normalization (`mg`, `milligram(s)`; `mcg`, `ug`, `microgram(s)`; `g`, `gram(s)`; whitespace-insensitive). Any miss -> `warnings.push({ code: "med_not_in_source" | "dose_not_in_source", name, dose })` and job stage `needs_review`. Back-translation check for translations works the same way on numbers and drug names.
-- Readability: `text-readability` `fleschKincaidGrade(summary)` stored in `warnings` as informational when above 7 (reported, never blocks).
+`runPipeline({ rawText | audio, languages })` returns `{ perLanguage, meta, summaries, backTranslations, rawText }`. `perLanguage[lang]` is the fixed contract (`toAiOutput` projection of the richer summary); `meta` carries provider, model, usage, stages, the safety-check verdict and findings, and the back-translation result per language. The ingest job stores the richer summary (`simplified`) and one `translation#<lang>` per picked language; `POST /synthesize { linkId }` re-runs it on the stored clinician text and deletes translations it did not regenerate.
+
+Safety check: `verify/fidelity.ts` requires every medication name and every numeric dose in the output to appear in the source (units normalized, ratio doses such as 875/125 mg handled); a miss fails the check, flags `needs_review`, and adds one clinic-tier notice to the English summary so it is translated into every language. `verify/readability.ts` reports the Flesch-Kincaid grade. Translations are diffed against a back-translation on numbers and drug names.
+
+Patient reads share one loader (`routes/patientView.ts`): resolve the link (400/404/410/425 rules in `linkAccess.ts`), pick the language, serve the stored document for it, or run the translate stage lazily, store, and serve. Two renderers sit on top: the richer shape for `/summary` and `/translate`, the contract plus `meta` for `/p/:token`.
 
 ## Agents
 
-- `SimplifierAgent.simplify({ text, language? })` -> `SimplifiedSummary`. Bedrock implementation: `ConverseCommand` with `system` (never invent medications or doses; keep every drug name, dose and frequency verbatim; 5th-grade level; call `emit_summary` once), one user message holding the source text, `toolConfig.tools[0].toolSpec.inputSchema.json = z.toJSONSchema(SimplifiedSummary)` (zod 4 built-in), `toolChoice: { tool: { name: "emit_summary" } }` (forced; verified live on both profiles), `inferenceConfig: { maxTokens: 4096, temperature: 0 }`. Read `output.message.content.find(c => c.toolUse).toolUse.input`, validate with zod, retry once on validation failure with the zod issues appended to the user message.
-- `TranslatorAgent.translate({ summary, language })` -> `TranslatedSummary` (same shape plus `language`, `backTranslationWarnings`). Bedrock implementation: one call to translate field by field with medication `name|dose|howOften` passed through unchanged, then one call back to English, then `verify/backtranslate.ts`.
-- `TranscriberAgent.transcribe({ audio: Buffer, mimeType })` -> `{ text, provider, jobName? }`. AWS implementation: `PutObjectCommand` to `TRANSCRIBE_BUCKET`, `StartMedicalTranscriptionJobCommand` (`LanguageCode: "en-US"`, `Specialty: "PRIMARYCARE"`, `Type: "DICTATION"`, `Media.MediaFileUri: s3://bucket/key`, `OutputBucketName`), poll `GetMedicalTranscriptionJobCommand` until `COMPLETED|FAILED`, `GetObjectCommand` the transcript JSON and read `results.transcripts[0].transcript`. Marked "needs S3 bucket" in README. Offline implementation returns `fixtures/offline/transcripts/dictation-1.json`.
-- Anthropic direct implementation (`LLM_PROVIDER=anthropic`) uses `@anthropic-ai/sdk` `messages.create` with `output_config: { format: { type: "json_schema", schema } }` and JSON.parse of the first text block; untested here (no key) and listed under "needs a key".
+- `SimplifierAgent.simplify({ text, language? })`, Bedrock: `ConverseCommand` with one tool whose `inputSchema.json` is `z.toJSONSchema(SimplifiedSummary)`, forced `toolChoice: { tool }` with a fallback to `auto` + a system line, `temperature 0`, `maxTokens 4096`, zod validation, one retry with the issues sent back as a `toolResult` error.
+- `TranslatorAgent.translate({ summary, language, languageName })`, Bedrock: translate field by field with medication names and doses passed through, then back-translate to English for the diff.
+- `TranscriberAgent.transcribe({ audio, mimeType })`, AWS: S3 put -> `StartMedicalTranscriptionJob` -> poll -> read the transcript JSON. Input and output buckets default to `AUDIO_BUCKET`.
+- Offline twins: fingerprinted fixtures for the five examples plus rule-based extraction; curated es/zh/ar for Example 1, a Spanish phrase dictionary, a marked passthrough elsewhere; a fixture transcript.
 
-## Email
+## Email, clock, purge, security
 
-- `nodemailer.createTransport` by `EMAIL_TRANSPORT`: `console` -> `{ jsonTransport: true }` then log the parsed message and the link; `smtp` -> `SMTP_URL`; `ses` -> `{ SES: { sesClient: new SESv2Client({ region }), SendEmailCommand } }` from `@aws-sdk/client-sesv2` (nodemailer 10 requires the v2 client; verified by constructing the transport).
-- `EMAIL_QUEUE=sqs`: `SendMessageCommand({ QueueUrl, MessageBody: JSON.stringify(msg) })`; worker: `ReceiveMessageCommand({ QueueUrl, MaxNumberOfMessages: 10, WaitTimeSeconds: 20 })` -> send -> `DeleteMessageCommand({ QueueUrl, ReceiptHandle })`. Exported `handler(event)` iterates `event.Records[].body` for Lambda.
+- nodemailer: `console` (jsonTransport, printed in full for the demo), `smtp` (`SMTP_URL`), `ses` (`@aws-sdk/client-sesv2`); `EMAIL_QUEUE=sqs` sends `{ to, subject, text, linkIdHash, kind }` to SQS and `scripts/email-worker.ts` consumes it (also a Lambda `handler`). The email carries the link and the expiry date only.
+- `Clock` is injected everywhere; `DEMO_MODE=true` mounts `/admin/clock/advance`, `/admin/clock/reset`, `/admin/purge`. The purge job runs every `PURGE_INTERVAL_MS` (`unref`'d timer) and on demand; it also sweeps anything past its TTL whose link row is gone (backstop).
+- Provider key compared in constant time; patient routes rate-limited per IP (token bucket); multer in memory with a 15 MB limit and a `%PDF-` check; pino redacts bodies, emails, text, summaries, keys and link ids; audit details are scrubbed of PHI keys.
 
-## Clock, expiry and purge
+## Env, IAM, decisions
 
-- `Clock` is injected everywhere a timestamp is produced or compared. `DEMO_MODE=true` enables `POST /admin/clock/advance { days }` which adds an offset; `GET /health` reports `clock.now` and `clock.offsetDays`.
-- `purge.run()` selects links with `expires_at <= now` and status not `purged`: null the key, delete `pk=link#<id>` items (Query by pk then DeleteCommand each; local: `DELETE WHERE pk=?`), status `purged`, clear `patients.active_link_id`, audit `link.purged` + `key.destroyed`. Interval `PURGE_INTERVAL_MS` (default 60000) with `unref()` so tests exit.
+See README.md for the env table, the IAM table and the "needs a key / not exercised live" table. Decisions:
 
-## Security and logging
-
-- Provider key compare with `crypto.timingSafeEqual`. Patient endpoints rate-limited lightly (in-memory token bucket per IP) to slow link guessing; 128-bit ids make guessing infeasible anyway.
-- pino redact paths: `req.headers["x-provider-key"]`, `req.headers.authorization`, `email`, `*.email`, `text`, `*.text`, `summary`, `*.summary` (pino `*` matches one level, so both forms are listed). Request logging via `pino-http` with `autoLogging.ignore` for `/health`.
-- multer `memoryStorage`, `limits: { fileSize: 15 * 1024 * 1024, files: 1 }`; PDF magic-byte check (`%PDF-`) before parsing.
-
-## OpenAPI
-
-`openapi.yaml` is hand-written (3.0.3), parsed with `yaml` at boot and served by `swagger-ui-express` at `/docs` (verified on Express 5). The zod schema for `SimplifiedSummary` is exported as JSON Schema into `components.schemas` by a `scripts/sync-openapi.ts` step so the two never drift.
-
-## Env
-
-```
-PORT=4000  PATIENT_APP_URL=http://localhost:5173  PROVIDER_API_KEY=dev-provider-key
-DATABASE_URL=            (empty -> SQLite backend/data/app.db)
-DOC_STORE=local|dynamo   DYNAMO_TABLE=dischargeai-docs  DYNAMO_ENDPOINT=http://localhost:8000
-LLM_PROVIDER=offline|bedrock|anthropic   BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-6  AWS_REGION=us-west-2
-ANTHROPIC_API_KEY=       ANTHROPIC_MODEL=claude-opus-5-5
-TRANSCRIBE_PROVIDER=offline|aws   TRANSCRIBE_BUCKET=
-EMAIL_TRANSPORT=console|smtp|ses  EMAIL_FROM=noreply@example.test  SMTP_URL=  EMAIL_QUEUE=none|sqs  SQS_QUEUE_URL=
-DEMO_MODE=true  PURGE_INTERVAL_MS=60000  LOG_LEVEL=info  KEY_VERSION=1
-```
-
-## IAM permissions (README table)
-
-`bedrock:InvokeModel` on the inference profile and the underlying foundation models; `dynamodb:CreateTable, UpdateTimeToLive, DescribeTimeToLive, PutItem, GetItem, Query, DeleteItem` on the table; `ses:SendEmail`; `sqs:SendMessage, ReceiveMessage, DeleteMessage`; `transcribe:StartMedicalTranscriptionJob, GetMedicalTranscriptionJob`; `s3:PutObject, GetObject` on the transcribe bucket.
-
-## Decisions and alternatives considered
-
-- Express 5 over Fastify: async errors propagate to the error middleware natively (verified), multer and swagger-ui-express work unchanged, teammates know it.
-- Thin repository layer over Drizzle: fewer moving parts for two SQL dialects; migrations are plain SQL files.
-- pdf-parse v2 (`PDFParse` class) over v1 API: the installed 2.4.5 has a different API from the widely copied v1 snippet; the fallback is pdfjs-dist legacy build, which also parsed the hackathon PDF.
-- No `dosis` package for dose parsing: the published 0.1.0 is broken (missing `dist/parser`); a 40-line regex normalizer in `verify/fidelity.ts` covers mg, mcg, g, mL, units and ratio doses.
-- No `@types/nodemailer`: nodemailer 10 ships its own types and the README says the DefinitelyTyped package conflicts.
-- DynamoDB Local: the Docker daemon is not available in this container, but the jar downloads from `s3.us-west-2.amazonaws.com/dynamodb-local` and runs on the installed Java 21, so `scripts/dynamodb-local.sh` offers that path next to `docker compose up`.
+- Express 5 over Fastify: async errors reach the error middleware natively; multer and swagger-ui-express work unchanged.
+- A thin repository layer over an ORM: two dialects, plain SQL files, one upsert helper.
+- MariaDB over mysql2 rather than an IAM auth token: the instance has IAM auth enabled, but the team secret holds the admin password and the console's own connection steps use it; tokens can be added later behind `poolOptions()`.
+- One DynamoDB item per link (see Data model) rather than one per document.
+- `auto` modes with fallback for SQL and audio, hard failure when forced: the demo must boot anywhere, and `/health` must say what it is running on.
+- Postgres removed: it was never the team's database and was untested here.
+- DynamoDB Local kept (docker-compose and the jar runner) for a DynamoDB demo without an AWS account.

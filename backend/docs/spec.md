@@ -1,6 +1,8 @@
-# DischargeAI backend: requirements (Kiro spec)
+# DischargeAI backend: requirements (Kiro spec), branch `alt-backend`
 
-Scope: everything under `backend/` on branch `backend` of `sameerj05/DischargeAI`. The backend owns the SQL patient database, every API endpoint, and the document-store (DynamoDB) read/write logic. Teammates own the plain-language simplification prompt and the translation agent; the backend ships a working default for both behind an interface so the whole product demos end to end today.
+Precedence (Advik, 10 Oct 2026): the Granola API note is the source of truth; the team architecture diagram fills in what the note is silent on; the real AWS resources (Secrets Manager `hackhealth/secret`, RDS MariaDB `patients`, DynamoDB `discharge-summaries` with hash key `uid`, S3 `emraudio-rh`) override names in both. Where the note and the diagram conflict, the note wins.
+
+Scope: everything under `backend/` on branch `alt-backend` of `sameerj05/DischargeAI`. The backend owns the SQL patient database, every API endpoint, and the document-store (DynamoDB) read/write logic. Teammates own the plain-language simplification prompt and the translation agent; the backend ships a working default for both behind an interface so the whole product demos end to end today.
 
 Challenge brief (Rutgers Health Hack 2026, Ops Unleashed, Challenge 1 "Discharge AI"): capture complex clinical discharge instructions (audio or EMR text), turn them into plain language and the patient's native tongue, host them at a secure link, and permanently self-destruct the data exactly 30 days after creation. Judged on clinical-to-vernacular translation, technical architecture and compliance (audio/text recorded, 30-day self-destruct fully functional in database code), and user experience.
 
@@ -25,11 +27,11 @@ As a provider, I want to list and search patients so I can attach a discharge su
 ### US-2 Provider ingests a discharge summary (text, PDF or audio)
 As a provider, I want to paste text, upload a PDF, or dictate audio and get back a patient link immediately.
 
-- POST `/ingest` is multipart: `patientId` (required) plus exactly one of `text`, `file` (PDF) or `audio` (wav/mp3/m4a/webm). Optional `language` (patient preference), `caregiverEmail`, `caregiverApproved` (boolean).
+- POST `/ingest` is multipart: `patientId` (required) plus exactly one of `text`, `file` (PDF) or `audio` (wav/mp3/m4a/webm). Optional `language` (patient preference), `languages` (more languages to translate at synthesis, comma-separated or repeated), `caregiverEmail`, `caregiverApproved` (boolean).
 - Empty input (no text, empty PDF, no audio) returns 400 `{ error: "empty_input" }`.
-- Success returns 202 `{ jobId, linkId, link: "${PATIENT_APP_URL}/s/${linkId}", expiresAt, statusUrl: "/jobs/${jobId}" }` before any LLM call runs.
+- Success returns 202 `{ jobId, linkId, link: "${PATIENT_APP_URL}/s/${linkId}", patientUrl: "/p/${linkId}", expiresAt, statusUrl: "/jobs/${jobId}", synthesisLanguages }` before any LLM call runs.
 - The pipeline runs asynchronously: extract text (pdf-parse, with pdfjs-dist fallback; TranscriberAgent for audio) -> SimplifierAgent -> fidelity check -> encrypt and store raw + simplified -> set `patients.active_link_id` -> email the patient (and caregiver only when `caregiverApproved=true`) -> audit.
-- The pipeline is persisted in the SQL `jobs` table so a restart does not lose a job; stages: `received | extracting | transcribing | simplifying | stored | emailing | done | failed | needs_review`.
+- The pipeline is persisted in the SQL `jobs` table so a restart does not lose a job; stages: `received | extracting | transcribing | simplifying | checking | translating | stored | emailing | done | failed | needs_review`. Dictated audio is stored sealed in the audio store before transcription so a restart resumes from it.
 - GET `/jobs/:jobId` (provider) returns `{ jobId, stage, error, warnings, createdAt, updatedAt, linkIdHash }`.
 
 ### US-3 Patient reads the plain-language summary
@@ -54,7 +56,7 @@ Simplified summary shape (validated with zod):
 ### US-4 Patient translates on demand
 As a patient, I want one tap to see the summary in my language, with my medication names and doses untouched.
 
-- GET `/translate?link=<linkId>&language=<name or ISO code>` returns the translated structured JSON; the first call runs the TranslatorAgent and caches, the second call is served from the document store (`fromCache: true`).
+- GET `/translate?link=<linkId>&language=<name or ISO code>` returns the translated structured JSON; a language picked at ingest was produced at synthesis and is served from the document store at once (`fromCache: true`); any other supported language runs the TranslatorAgent on the first call and is cached for the second.
 - Medication names, doses and frequencies are copied verbatim, never translated. The agent back-translates to English and diff-checks numbers and drug names; mismatches become `warnings[]`.
 - GET `/languages` lists supported languages (name, code). Same 404/410/425 rules as `/summary`.
 
@@ -86,11 +88,28 @@ As a provider, I want the patient to receive the link by email, and as a demo ru
 - `EMAIL_QUEUE=sqs` enqueues `{ to, subject, text, linkIdHash }` to `SQS_QUEUE_URL` instead of sending; `scripts/email-worker.ts` consumes and sends, and also exports a Lambda `handler`.
 - The email body never contains the summary itself, only the link and the expiry date.
 
-### US-9 Document store runs locally or on DynamoDB
-As the backend owner, I want DynamoDB to be first-class but never required for a demo.
+### US-9 Document store runs on the team's DynamoDB table or its SQL twin
+As the backend owner, I want the real table to be first-class but never required for a demo.
 
-- `DOC_STORE=local` (default) uses a SQLite `documents` table with the same `{pk, sk, ciphertext, iv, tag, keyVersion, expiresAt}` shape.
-- `DOC_STORE=dynamo` uses `@aws-sdk/lib-dynamodb` against `DYNAMO_TABLE`, with `DYNAMO_ENDPOINT` for DynamoDB Local. `scripts/create-dynamo-table.ts` creates the table (pk HASH, sk RANGE) and enables TTL on `expiresAt`. `docker-compose.yml` runs `amazon/dynamodb-local`.
+- The table is `discharge-summaries` (hash key `uid`, no sort key, TTL on `expiresAt`), names from the secret's `dynamodb-table` and `dynamodb-table-pk`. One item per link: `uid = link#<sha256(linkId)>`, `expiresAt`, and one attribute per document (`raw`, `simplified`, `translation#<lang>`), each `{ ciphertext, iv, tag, keyVersion, createdAt }`.
+- `DOC_STORE=auto` (default) uses DynamoDB when the team secret loaded (credentials present) or `DYNAMO_ENDPOINT` is set, else the SQL twin `discharge_summaries` (same `uid`, one row per document). `local` and `dynamo` force one. `scripts/setup-dynamo.ts` creates the table when missing and enables TTL, idempotently. `docker-compose.yml` and `scripts/dynamodb-local.sh` run DynamoDB Local.
+- Verified live against the real table from the build container on 10 Oct 2026: put, get, list, remove one, delete all; a full ingest wrote three documents on one item and was cleaned up.
+
+### US-13 The team diagram's routes and contract (additive)
+As Person A and Person C, I want the routes and the JSON the diagram names, without losing anything the note asked for.
+
+- GET `/p/:token?language=` returns the fixed per-language object `{ language, readingLevel, steps, medications, followUps, warnings }` (richer fields optional) plus `meta` beside it: status, expiry, days left, ready and supported languages, safety checks, provenance, checklist state. Same 400/404/410/425 rules as `/summary`; the same loader serves `/summary` and `/translate` in the richer shape.
+- POST `/synthesize` (provider): `{ text, languages? }` runs the pipeline as a dry run; `{ linkId, languages?, text? }` re-synthesizes a record in place, deleting translations it did not regenerate with deletion receipts and incrementing `synthesisCount`.
+- The contract is published at `/contracts/ai-output.schema.json` and `/contracts/ai-output.ts`; `src/agents/pipeline.ts` exposes the four stages for Person C.
+- Spanish, Mandarin and Arabic are the synthesis targets, each with a curated offline fixture for Example 1; twenty languages are accepted on demand.
+
+### US-14 Real team infrastructure
+As the team, I want the backend to run on the resources we actually have, with secrets kept out of the repo.
+
+- Config bootstrap from Secrets Manager `hackhealth/secret` at startup when credentials resolve: MySQL host, port, user, password, database and the DynamoDB table and key names; env vars override; only key names are logged; `/health` reports the source.
+- SQL on the RDS MariaDB instance `patients` through `mysql2` with TLS from the RDS global bundle (AWS connection step 1, `scripts/fetch-rds-bundle.sh`, committed at `certs/global-bundle.pem`); migrations per dialect; SQLite stays the default for local dev and tests; `SQL_DRIVER=auto` falls back to SQLite when the host is unreachable and says so.
+- Audio in the bucket `emraudio-rh` with SSE; its existing 30-day lifecycle rule is verified, not replaced; `AUDIO_STORE=auto` falls back to a local directory when the bucket is unreachable.
+- README documents the secret ARN, table and key names, RDS host/port/user, the two AWS connection steps, the IAM permissions, and what was and was not exercised live.
 
 ### US-10 Every AI call has an offline twin
 As a tester, I want the full suite and the full demo to run with no keys.
@@ -108,13 +127,13 @@ As a teammate, I want to drop in my own simplifier or translator by replacing on
 
 ### US-12 Docs and demo
 - OpenAPI 3 spec at `backend/openapi.yaml`, served at `/docs` (swagger-ui-express) and `/openapi.json`.
-- `backend/README.md`: run in 3 commands, env table, endpoint table with curl, agent contract, demo narrative, "needs a key" table, "what stays under human control".
-- `scripts/demo.sh` runs the narrative against a running server with offline providers: ingest Example 1 -> email printed -> GET /summary -> GET /translate?language=Spanish -> advance clock 30 days -> 410 -> purge log.
+- `backend/README.md`: precedence, run in one command, lane-by-lane diagram mapping, team infrastructure, env table, endpoint table with curl, agent contract, demo narrative, "needs a key / not exercised live" table, "what stays under human control", what the other branch has.
+- `scripts/demo.sh` runs the narrative against a running server with offline providers: ingest Example 1 with es,zh,ar picked -> email printed -> GET /summary -> GET /p/:token -> the picked languages from the store and Portuguese on demand -> checklist tick -> POST /synthesize dry run -> advance clock 30 days -> 410 -> purge -> deletion receipts.
 
 ## Non-functional requirements
 
 - No PHI in logs: pino with redaction of bodies, emails, text fields and the provider key; request logs carry only method, path, status, latency and link hash prefix.
-- Node 22, TypeScript (ESM, NodeNext), Express 5, zod 4, better-sqlite3 by default, Postgres via `DATABASE_URL`.
-- Tests: vitest, offline providers, the nine scenarios in the spec, counts recorded in README.
+- Node 22, TypeScript (ESM, NodeNext), Express 5, zod 4, better-sqlite3 by default, MariaDB/MySQL via `mysql2` (the team's production database).
+- Tests: vitest, offline providers, 88 tests in 19 files on 10 Oct 2026, counts recorded in README.
 - Product law: the backend never emits text a user sends as their own. It explains and translates the clinician's instructions and speaks as itself.
 - Copy: confident present tense, no product-history narration, no em dashes.
