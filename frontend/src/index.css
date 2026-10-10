@@ -861,3 +861,95 @@ h1 {
   background: #fff;
   color: #4a5652;
 }
+
+/* -- Live transcript -- */
+.live-transcript {
+  width: 100%;
+  max-width: 560px;
+  min-height: 80px;
+  border: 1px solid #dfe6e2;
+  border-radius: 10px;
+  background: #fff;
+  color: #2f3b37;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  line-height: 1.75;
+  text-align: left;
+}
+
+.transcript-placeholder {
+  color: #a1aaa7;
+  font-style: italic;
+}
+
+.transcript-error {
+  color: #9b4b40;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+/* Disabled download button */
+.secondary-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── PDF extraction states ── */
+.pdf-file-section {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  gap: 12px;
+}
+
+.pdf-status {
+  font-size: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin: 0;
+}
+
+.pdf-status.extracting {
+  background: #f0f4f2;
+  color: #4f7e71;
+}
+
+.pdf-status.scanned {
+  background: #fff8ec;
+  color: #8a6327;
+}
+
+.pdf-status.error {
+  background: #fff2f0;
+  color: #9b4b40;
+}
+
+.pdf-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.pdf-preview label {
+  color: #34423d;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pdf-preview textarea {
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+  border: 1px solid #dfe6e2;
+  border-radius: 10px;
+  background: #f9fbfa;
+  color: #2f3b37;
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  outline: none;
+  cursor: default;
+}

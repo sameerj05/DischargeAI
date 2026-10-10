@@ -3,3 +3,7 @@ frontend/node_modules/
 
 # Build output
 frontend/dist/
+
+# Environment / credentials
+frontend/.env
+frontend/.env.local
