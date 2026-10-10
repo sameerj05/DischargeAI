@@ -1,13 +1,13 @@
-import type { SimplifiedSummary, StoredSummary, Warning } from "../agents/types.js";
+import type { PipelineResult } from "../agents/pipeline.js";
+import type { StoredSummary, StoredTranslation } from "../agents/types.js";
 import type { AppContext } from "../context.js";
 import { hashPrefix } from "../crypto/linkId.js";
+import type { JobStage } from "../db/repos/jobs.js";
+import type { LinkRecord } from "../db/repos/links.js";
 import { SK } from "../docstore/types.js";
 import { caregiverLinkEmail, patientLinkEmail } from "../email/templates.js";
 import { extractPdfText } from "../extract/pdf.js";
 import { normalizeText } from "../extract/text.js";
-import { checkFidelity } from "../verify/fidelity.js";
-import { readabilityWarning } from "../verify/readability.js";
-import type { JobStage } from "../db/repos/jobs.js";
 
 /** What POST /ingest hands to the pipeline. Kept in memory until the `raw` document exists. */
 export interface PendingInput {
@@ -25,14 +25,17 @@ export interface RawDocument {
   linkId: string;
 }
 
-function epochSeconds(iso: string): number {
+export function epochSeconds(iso: string): number {
   return Math.floor(new Date(iso).getTime() / 1000);
 }
 
 /**
  * The stage machine:
- *   received -> extracting (pdf) | transcribing (audio) -> simplifying -> stored -> emailing -> done | needs_review
+ *   received -> extracting (pdf) | transcribing (audio) -> simplifying -> checking -> translating
+ *            -> stored -> emailing -> done | needs_review
  *   any stage --error--> failed
+ * Everything between the clinician text and the per-language JSON is the lane-3 pipeline
+ * (src/agents/pipeline.ts); this job persists its input, stores its output, and emails the link.
  */
 export async function runIngestJob(ctx: AppContext, jobId: string, pending?: PendingInput): Promise<void> {
   const { jobs, links, patients, audit, secureDocs, clock, log } = ctx;
@@ -44,9 +47,9 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
     return;
   }
   const lp = hashPrefix(job.linkIdHash);
-  const setStage = async (stage: JobStage, error?: string) => {
+  const setStage = async (stage: JobStage, error?: string, detail?: Record<string, unknown>) => {
     await jobs.setStage(jobId, stage, clock.nowIso(), error);
-    await audit.append({ event: "job.stage", linkIdHash: job.linkIdHash, actor: "system", at: clock.nowIso(), details: { jobId, stage, ...(error ? { error } : {}) } });
+    await audit.append({ event: "job.stage", linkIdHash: job.linkIdHash, actor: "system", at: clock.nowIso(), details: { jobId, stage, ...(detail ?? {}), ...(error ? { error } : {}) } });
     log.info({ jobId, link: lp, stage }, "job stage");
   };
 
@@ -69,7 +72,7 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
         text = r.text;
       } else {
         await setStage("transcribing");
-        const r = await ctx.transcriber.transcribe({ audio: pending.file!.buffer, mimeType: pending.file!.mimeType, fileName: pending.file!.fileName });
+        const r = await ctx.pipeline.stages.transcribe.run({ audio: pending.file!.buffer, mimeType: pending.file!.mimeType, fileName: pending.file!.fileName });
         await jobs.mergeMeta(jobId, { transcribeProvider: r.provider, transcribeJobName: r.jobName, transcribeMs: r.latencyMs }, clock.nowIso());
         text = normalizeText(r.text);
       }
@@ -79,33 +82,22 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
     }
     const { text, linkId } = raw;
 
-    // 2. Simplify, then verify the claim deterministically.
-    await setStage("simplifying");
-    const result = await ctx.simplifier.simplify({ text, language: link.language ?? undefined });
-    const summary: SimplifiedSummary = { ...result.summary, readingLevel: "grade5", language: "en" };
-    const warnings: Warning[] = checkFidelity(summary, text);
-    const readability = readabilityWarning(summary.summary);
-    if (readability.warning) warnings.push(readability.warning);
-    await jobs.mergeMeta(jobId, { provider: result.provider, model: result.model, usage: result.usage, llmMs: result.latencyMs, fixture: result.fixture, sourceChars: text.length }, clock.nowIso());
-    await jobs.setWarnings(jobId, warnings, clock.nowIso());
+    // 2. Lane 3: simplify -> safety check -> translate the picked languages.
+    const result = await ctx.pipeline.run({
+      rawText: text,
+      languages: synthesisLanguages(link),
+      preferredLanguage: link.language ?? undefined,
+      onStage: (stage, detail) => setStage(stage, undefined, detail),
+    });
+    await jobs.mergeMeta(jobId, { provider: result.meta.provider, model: result.meta.model, usage: result.meta.usage, llmMs: result.meta.latencyMs, fixture: result.meta.fixture, sourceChars: text.length, stages: result.meta.stages, languages: result.meta.languages, fidelity: result.meta.safetyChecks.fidelity }, clock.nowIso());
+    await jobs.setWarnings(jobId, result.meta.safetyChecks.warnings, clock.nowIso());
 
-    // 3. Store the encrypted result and activate the link.
-    const stored: StoredSummary = {
-      summary,
-      warnings,
-      provider: result.provider,
-      model: result.model,
-      createdAt: clock.nowIso(),
-      sourceChars: text.length,
-      inputKind: job.inputKind,
-      readabilityGrade: readability.grade,
-    };
-    await secureDocs.putJson({ linkIdHash: job.linkIdHash, sk: SK.simplified, key, keyVersion: link.keyVersion, value: stored, expiresAtEpochSeconds: expiresAtEpoch, createdAt: clock.nowIso() });
-    const fidelityMisses = warnings.filter((w) => w.code === "med_not_in_source" || w.code === "dose_not_in_source");
-    const finalStage: JobStage = fidelityMisses.length ? "needs_review" : "done";
+    // 3. Store the encrypted results and activate the link.
+    await storePipelineResult(ctx, link, result, { inputKind: job.inputKind, synthesisCount: 1 });
+    const finalStage: JobStage = result.meta.safetyChecks.fidelity === "failed" ? "needs_review" : "done";
     await links.setStatus(job.linkIdHash, finalStage === "done" ? "ready" : "needs_review");
     await patients.setActiveLink(link.patientId, linkId, link.expiresAt);
-    await setStage("stored");
+    await setStage("stored", undefined, { languages: result.meta.languages });
 
     // 4. Email the patient (and the caregiver only with the patient's approval).
     await setStage("emailing");
@@ -128,6 +120,60 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
     await links.setStatus(job.linkIdHash, "failed").catch(() => undefined);
     await audit.append({ event: "job.stage", linkIdHash: job.linkIdHash, actor: "system", at: clock.nowIso(), details: { jobId, stage: "failed", error: message.slice(0, 200) } });
   }
+}
+
+/** Languages translated at synthesis so the toggle is instant: the ones picked on the link (besides en). */
+export function synthesisLanguages(link: Pick<LinkRecord, "language">): string[] {
+  return link.language && link.language !== "en" ? [link.language] : [];
+}
+
+/**
+ * Writes `simplified` and one `translation#<lang>` per translated language, each encrypted with
+ * the link key and carrying the link's expiresAt (the DynamoDB TTL attribute).
+ */
+export async function storePipelineResult(
+  ctx: AppContext,
+  link: LinkRecord,
+  result: PipelineResult,
+  opts: { inputKind: StoredSummary["inputKind"]; synthesisCount: number },
+): Promise<{ documents: string[] }> {
+  if (!link.encKey) throw new Error("link key is gone; cannot store");
+  const key = link.encKey;
+  const expiresAtEpoch = epochSeconds(link.expiresAt);
+  const now = ctx.clock.nowIso();
+  const translated = result.meta.languages.filter((l) => l !== "en");
+  const stored: StoredSummary = {
+    summary: result.summaries.en,
+    warnings: result.meta.safetyChecks.warnings,
+    provider: result.meta.provider,
+    model: result.meta.model,
+    createdAt: now,
+    sourceChars: result.meta.sourceChars,
+    inputKind: opts.inputKind,
+    readabilityGrade: result.meta.safetyChecks.readabilityGrade,
+    fidelity: result.meta.safetyChecks.fidelity,
+    stages: result.meta.stages,
+    synthesizedLanguages: translated,
+    synthesisCount: opts.synthesisCount,
+  };
+  await ctx.secureDocs.putJson({ linkIdHash: link.linkIdHash, sk: SK.simplified, key, keyVersion: link.keyVersion, value: stored, expiresAtEpochSeconds: expiresAtEpoch, createdAt: now });
+  const documents: string[] = [SK.simplified];
+  for (const lang of translated) {
+    const t = result.meta.translations[lang];
+    const doc: StoredTranslation = {
+      translation: result.summaries[lang],
+      backTranslation: result.backTranslations[lang],
+      warnings: t?.warnings ?? [],
+      provider: t?.provider ?? result.meta.provider,
+      model: t?.model,
+      createdAt: now,
+    };
+    const sk = SK.translation(lang);
+    await ctx.secureDocs.putJson({ linkIdHash: link.linkIdHash, sk, key, keyVersion: link.keyVersion, value: doc, expiresAtEpochSeconds: expiresAtEpoch, createdAt: now });
+    await ctx.audit.append({ event: "translation.created", linkIdHash: link.linkIdHash, actor: "system", at: now, details: { language: lang, provider: doc.provider, model: doc.model, warningCount: doc.warnings.length, atSynthesis: true } });
+    documents.push(sk);
+  }
+  return { documents };
 }
 
 async function deliver(ctx: AppContext, linkIdHash: string, kind: "patient" | "caregiver", mail: ReturnType<typeof patientLinkEmail>) {

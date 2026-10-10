@@ -1,3 +1,4 @@
+import { createPipeline, type Pipeline } from "./agents/pipeline.js";
 import { createSimplifier, type SimplifierAgent } from "./agents/simplifier.js";
 import { createTranscriber, type TranscriberAgent } from "./agents/transcriber.js";
 import { createTranslator, type TranslatorAgent } from "./agents/translator.js";
@@ -36,6 +37,8 @@ export interface AppContext {
   simplifier: SimplifierAgent;
   translator: TranslatorAgent;
   transcriber: TranscriberAgent;
+  /** Lane 3: transcribe -> simplify -> safety check -> translate, composed in src/agents/pipeline.ts. */
+  pipeline: Pipeline;
   mailer: Mailer;
   emailQueue?: EmailQueue;
   queue: JobQueue;
@@ -54,6 +57,7 @@ export interface CreateContextOptions {
   simplifier?: SimplifierAgent;
   translator?: TranslatorAgent;
   transcriber?: TranscriberAgent;
+  pipeline?: Pipeline;
   mailer?: Mailer;
   seed?: boolean;
 }
@@ -82,6 +86,7 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
   const simplifier = opts.simplifier ?? (await createSimplifier(config, log));
   const translator = opts.translator ?? (await createTranslator(config, log));
   const transcriber = opts.transcriber ?? (await createTranscriber(config, log));
+  const pipeline = opts.pipeline ?? createPipeline({ transcriber, simplifier, translator, log });
   const mailer = opts.mailer ?? (await createMailer(config, log));
   const emailQueue =
     config.EMAIL_QUEUE === "sqs"
@@ -105,6 +110,7 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
     simplifier,
     translator,
     transcriber,
+    pipeline,
     mailer,
     emailQueue,
     queue,

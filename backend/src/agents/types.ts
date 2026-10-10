@@ -82,6 +82,14 @@ export const StoredSummarySchema = z.object({
   sourceChars: z.number(),
   inputKind: z.enum(["text", "pdf", "audio"]),
   readabilityGrade: z.number().optional(),
+  /** Safety-check verdict from the pipeline (src/agents/pipeline.ts). */
+  fidelity: z.enum(["passed", "failed"]).optional(),
+  /** Stage names that ran, in order. */
+  stages: z.array(z.string()).optional(),
+  /** Languages translated at synthesis time (besides en). */
+  synthesizedLanguages: z.array(z.string()).optional(),
+  /** How many times the record was (re)synthesized; POST /synthesize increments it. */
+  synthesisCount: z.number().optional(),
 });
 export type StoredSummary = z.infer<typeof StoredSummarySchema>;
 

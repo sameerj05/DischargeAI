@@ -12,7 +12,7 @@
     "start": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:contract": "vitest run test/contract.test.ts",
+    "test:contract": "vitest run test/contract.test.ts test/pipeline.test.ts",
     "sync-contracts": "tsx scripts/sync-contracts.ts",
     "typecheck": "tsc --noEmit",
     "demo": "sh scripts/demo.sh",

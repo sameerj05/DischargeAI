@@ -7,6 +7,8 @@ export type JobStage =
   | "extracting"
   | "transcribing"
   | "simplifying"
+  | "checking"
+  | "translating"
   | "stored"
   | "emailing"
   | "done"

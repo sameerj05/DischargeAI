@@ -48,11 +48,16 @@ export class OfflineTranslator implements TranslatorAgent {
   }
 }
 
-/** A summary came from a fixture when its summary sentence equals that fixture's. */
+/**
+ * A summary gets the curated translation only when it IS the fixture, field for field. Anything
+ * edited after simplification (a safety notice, a teammate's prompt change) goes through the
+ * dictionary path so nothing added in English is silently dropped from the translation.
+ */
 function findFixtureId(summary: SimplifiedSummary): string | undefined {
+  const wanted = JSON.stringify(summary);
   for (const f of FIXTURE_MANIFEST) {
     try {
-      if (loadSimplifiedFixture(f.id).summary === summary.summary) return f.id;
+      if (JSON.stringify(loadSimplifiedFixture(f.id)) === wanted) return f.id;
     } catch {
       /* fixture missing */
     }
