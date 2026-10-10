@@ -50,18 +50,21 @@ function fromDynamo(i: DynamoItem): DocItem {
 }
 
 /**
- * DynamoDB table with `pk` (HASH) + `sk` (RANGE) and TTL enabled on `expiresAt`.
+ * DynamoDB table `discharge_records` (env DYNAMO_TABLE) with `pk` (HASH) + `sk` (RANGE) and TTL
+ * enabled on `expiresAt`, the lane-4 contract. Every item written carries `expiresAt`.
  * `scripts/create-dynamo-table.ts` creates it; `docker-compose.yml` runs DynamoDB Local.
  * TTL deletion lags by up to days on AWS, so the purge job and read-time expiry checks are the
  * real 30-day enforcement and TTL is the backstop.
  */
 export class DynamoDocumentStore implements DocumentStore {
   readonly name = "dynamo" as const;
+  readonly tableName: string;
   private readonly doc: DynamoDBDocumentClient;
   private readonly table: string;
 
   constructor(opts: DynamoOptions, client: DynamoDBClient = createDynamoClient(opts)) {
     this.table = opts.tableName;
+    this.tableName = opts.tableName;
     this.doc = DynamoDBDocumentClient.from(client, { marshallOptions: { removeUndefinedValues: true } });
   }
 

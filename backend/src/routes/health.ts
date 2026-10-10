@@ -15,6 +15,7 @@ export function healthRouter(ctx: AppContext): Router {
         llmModel: ctx.config.LLM_PROVIDER === "bedrock" ? ctx.config.BEDROCK_MODEL_ID : ctx.config.LLM_PROVIDER === "anthropic" ? ctx.config.ANTHROPIC_MODEL : "fixtures+rules",
         transcribe: ctx.transcriber.name,
         docStore: ctx.docStore.name,
+        docTable: ctx.docStore.tableName,
         email: ctx.mailer.transportName,
         emailQueue: ctx.emailQueue ? "sqs" : "none",
         sql: ctx.db.dialect,

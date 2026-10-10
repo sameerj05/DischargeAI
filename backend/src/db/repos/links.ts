@@ -12,6 +12,7 @@ export interface LinkRow {
   enc_key: Buffer | Uint8Array | null;
   last_viewed_at: string | null;
   language: string | null;
+  languages: string | null;
   caregiver_email: string | null;
   caregiver_approved: number;
 }
@@ -26,8 +27,20 @@ export interface LinkRecord {
   encKey: Buffer | null;
   lastViewedAt: string | null;
   language: string | null;
+  /** Languages picked at ingest (BCP-47), translated at synthesis so the toggle is instant. */
+  languages: string[];
   caregiverEmail: string | null;
   caregiverApproved: boolean;
+}
+
+function parseLanguages(s: string | null): string[] {
+  if (!s) return [];
+  try {
+    const v = JSON.parse(s) as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function toRecord(r: LinkRow): LinkRecord {
@@ -41,6 +54,7 @@ function toRecord(r: LinkRow): LinkRecord {
     encKey: r.enc_key ? Buffer.from(r.enc_key) : null,
     lastViewedAt: r.last_viewed_at,
     language: r.language,
+    languages: parseLanguages(r.languages),
     caregiverEmail: r.caregiver_email,
     caregiverApproved: Number(r.caregiver_approved) === 1,
   };
@@ -57,12 +71,13 @@ export class LinksRepo {
     keyVersion: number;
     encKey: Buffer;
     language?: string | null;
+    languages?: string[];
     caregiverEmail?: string | null;
     caregiverApproved?: boolean;
   }): Promise<LinkRecord> {
     await this.db.run(
-      `INSERT INTO links (link_id_hash, patient_id, status, created_at, expires_at, key_version, enc_key, language, caregiver_email, caregiver_approved)
-       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO links (link_id_hash, patient_id, status, created_at, expires_at, key_version, enc_key, language, languages, caregiver_email, caregiver_approved)
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.linkIdHash,
         input.patientId,
@@ -71,11 +86,16 @@ export class LinksRepo {
         input.keyVersion,
         input.encKey,
         input.language ?? null,
+        input.languages?.length ? JSON.stringify(input.languages) : null,
         input.caregiverEmail ?? null,
         input.caregiverApproved ? 1 : 0,
       ],
     );
     return (await this.getByHash(input.linkIdHash))!;
+  }
+
+  async setLanguages(hash: string, languages: string[]): Promise<void> {
+    await this.db.run("UPDATE links SET languages = ? WHERE link_id_hash = ?", [languages.length ? JSON.stringify(languages) : null, hash]);
   }
 
   async getByHash(hash: string): Promise<LinkRecord | undefined> {

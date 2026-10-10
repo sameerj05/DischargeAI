@@ -1,6 +1,7 @@
 /**
  * The document store holds only ciphertext. Items are keyed `pk = link#<sha256(linkId)>` and
- * `sk = raw | simplified | translation#<lang>`; `expiresAt` (epoch seconds) is the DynamoDB TTL attribute.
+ * `sk = raw | simplified | translation#<lang>`; `expiresAt` (epoch seconds) is the DynamoDB TTL
+ * attribute on every item. Table: `discharge_records` (the lane-4 contract), in DynamoDB and locally.
  */
 export interface DocItem {
   pk: string;
@@ -15,6 +16,8 @@ export interface DocItem {
 
 export interface DocumentStore {
   readonly name: "local" | "dynamo";
+  /** `discharge_records` by default (env DYNAMO_TABLE); the local twin carries the same name. */
+  readonly tableName: string;
   put(item: DocItem): Promise<void>;
   get(pk: string, sk: string): Promise<DocItem | null>;
   list(pk: string, skPrefix?: string): Promise<DocItem[]>;

@@ -41,7 +41,7 @@ export const ConfigSchema = z.object({
   DATABASE_URL: optionalString,
 
   DOC_STORE: z.enum(["local", "dynamo"]).default("local"),
-  DYNAMO_TABLE: z.string().default("dischargeai-docs"),
+  DYNAMO_TABLE: z.string().default("discharge_records"),
   DYNAMO_ENDPOINT: optionalString,
   KEY_VERSION: int(1),
 

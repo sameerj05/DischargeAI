@@ -1,5 +1,6 @@
 /**
- * Creates the DynamoDB table for DOC_STORE=dynamo and enables TTL on `expiresAt`.
+ * Creates the DynamoDB table for DOC_STORE=dynamo (`discharge_records` by default, env DYNAMO_TABLE)
+ * and enables TTL on `expiresAt`, the attribute every item carries (lane-4 contract).
  *   DYNAMO_ENDPOINT=http://localhost:8000 npm run create-table     (DynamoDB Local)
  *   AWS_REGION=us-west-2 npm run create-table                      (real AWS; standard credential chain)
  * Idempotent: an existing table is left alone, TTL is (re)enabled.
