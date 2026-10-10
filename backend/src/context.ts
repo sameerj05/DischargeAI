@@ -1,5 +1,5 @@
 import { createPipeline, type Pipeline } from "./agents/pipeline.js";
-import { createAudioStore, SecureAudio, type AudioStore } from "./audiostore/index.js";
+import { selectAudioStore, SecureAudio, type AudioStore, type AudioStoreSelection } from "./audiostore/index.js";
 import { createSimplifier, type SimplifierAgent } from "./agents/simplifier.js";
 import { createTranscriber, type TranscriberAgent } from "./agents/transcriber.js";
 import { createTranslator, type TranslatorAgent } from "./agents/translator.js";
@@ -30,6 +30,8 @@ export interface AppContext {
   boot: Omit<SecretBootstrap, "env">;
   /** Which SQL engine is live and whether SQLite stood in for an unreachable MySQL. */
   sql: Omit<SqlConnection, "db">;
+  /** Which audio store is live and whether the local directory stood in for an unreachable bucket. */
+  audio: Omit<AudioStoreSelection, "store">;
   log: Logger;
   clock: Clock;
   db: Db;
@@ -91,7 +93,10 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
   const checklist = new ChecklistRepo(db);
   const docStore = createDocumentStore(config, db, resolveDocStore(config, boot.loaded));
   const secureDocs = new SecureDocs(docStore);
-  const audioStore = opts.audioStore ?? createAudioStore(config);
+  const audioSelection: AudioStoreSelection = opts.audioStore
+    ? { store: opts.audioStore, requested: opts.audioStore.name }
+    : await selectAudioStore(config, { secretLoaded: boot.loaded, log });
+  const { store: audioStore, ...audio } = audioSelection;
   const secureAudio = new SecureAudio(audioStore);
 
   if (opts.seed !== false) {
@@ -115,6 +120,7 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
     config,
     boot,
     sql,
+    audio,
     log,
     clock,
     db,

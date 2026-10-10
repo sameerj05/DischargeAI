@@ -24,6 +24,12 @@ export function healthRouter(ctx: AppContext): Router {
         target: ctx.sql.target,
         fallback: ctx.sql.fallback ?? null,
       },
+      audio: {
+        store: ctx.audioStore.name,
+        location: ctx.audioStore.location,
+        requested: ctx.audio.requested,
+        fallback: ctx.audio.fallback ?? null,
+      },
       providers: {
         llm: ctx.simplifier.name,
         llmModel: ctx.config.LLM_PROVIDER === "bedrock" ? ctx.config.BEDROCK_MODEL_ID : ctx.config.LLM_PROVIDER === "anthropic" ? ctx.config.ANTHROPIC_MODEL : "fixtures+rules",

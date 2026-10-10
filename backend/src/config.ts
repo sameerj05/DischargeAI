@@ -76,9 +76,12 @@ export const ConfigSchema = z.object({
   TRANSCRIBE_BUCKET: optionalString,
   TRANSCRIBE_OUTPUT_BUCKET: optionalString,
 
-  /** Where dictated audio is kept (sealed with the link key): local directory or the S3 audio bucket. */
-  AUDIO_STORE: z.enum(["local", "s3"]).default("local"),
-  AUDIO_BUCKET: optionalString,
+  /**
+   * Where dictated audio is kept (sealed with the link key): the team's S3 bucket or a local
+   * directory. auto = the bucket when the team secret loaded and HeadBucket succeeds, else local.
+   */
+  AUDIO_STORE: z.enum(["auto", "local", "s3"]).default("auto"),
+  AUDIO_BUCKET: z.string().default("emraudio-rh"),
   AUDIO_DIR: z.string().default("data/audio"),
 
   EMAIL_TRANSPORT: z.enum(["console", "smtp", "ses"]).default("console"),

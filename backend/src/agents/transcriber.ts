@@ -26,8 +26,8 @@ export async function createTranscriber(config: Config, log: Logger): Promise<Tr
     const { AwsMedicalTranscriber } = await import("./aws/transcriber.js");
     return new AwsMedicalTranscriber({
       region: config.AWS_REGION,
-      inputBucket: config.TRANSCRIBE_BUCKET,
-      outputBucket: config.TRANSCRIBE_OUTPUT_BUCKET ?? config.TRANSCRIBE_BUCKET,
+      inputBucket: config.TRANSCRIBE_BUCKET ?? config.AUDIO_BUCKET,
+      outputBucket: config.TRANSCRIBE_OUTPUT_BUCKET ?? config.TRANSCRIBE_BUCKET ?? config.AUDIO_BUCKET,
       log,
     });
   }

@@ -1,6 +1,7 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -9,10 +10,12 @@ import {
 import { AUDIO_KEY_PREFIX, audioKeyFor, type AudioObject, type AudioStore } from "./types.js";
 
 /**
- * The lifecycle rule scripts/put-s3-lifecycle.ts installs on AUDIO_BUCKET: every object under
- * audio/ expires 30 days after it was written (S3 evaluates lifecycle rules once a day, so the
- * delete lands within about a day of the boundary; the purge job deletes the object at exactly day 30
- * and the lifecycle is the backstop, like DynamoDB TTL).
+ * The lifecycle rule scripts/ensure-s3-lifecycle.ts installs on AUDIO_BUCKET when no existing rule
+ * already expires audio/ objects within 30 days: every object under audio/ expires 30 days after it
+ * was written. The team bucket emraudio-rh already carries a bucket-wide 30-day rule (`autodelete`),
+ * so there the script only verifies. S3 evaluates lifecycle rules once a day, so the delete lands
+ * within about a day of the boundary; the purge job deletes the object at exactly day 30 and the
+ * lifecycle is the backstop, like DynamoDB TTL.
  */
 export const AUDIO_LIFECYCLE_RULE: LifecycleRule = {
   ID: "dischargeai-audio-expire-30-days",
@@ -21,6 +24,32 @@ export const AUDIO_LIFECYCLE_RULE: LifecycleRule = {
   Expiration: { Days: 30 },
   AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
 };
+
+/** True when an existing, enabled rule already expires every object under audio/ within 30 days. */
+export function ruleCoversAudio(rule: LifecycleRule, prefix: string = AUDIO_KEY_PREFIX): boolean {
+  if (rule.Status !== "Enabled") return false;
+  const days = rule.Expiration?.Days;
+  if (!days || days > 30) return false;
+  const rulePrefix = rule.Filter?.Prefix ?? rule.Prefix ?? rule.Filter?.And?.Prefix ?? "";
+  if (rule.Filter?.Tag || rule.Filter?.And?.Tags?.length || rule.Filter?.ObjectSizeGreaterThan || rule.Filter?.ObjectSizeLessThan) return false;
+  return prefix.startsWith(rulePrefix);
+}
+
+/** HeadBucket with a short timeout: the reachability probe behind AUDIO_STORE=auto. */
+export async function probeBucket(bucket: string, region: string, client?: Sendable, timeoutMs = 5000): Promise<void> {
+  const s3 = client ?? new S3Client({ region });
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`HeadBucket ${bucket} timed out after ${timeoutMs} ms`)), timeoutMs);
+    timer.unref();
+  });
+  try {
+    await Promise.race([s3.send(new HeadBucketCommand({ Bucket: bucket })), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (!client) (s3 as S3Client).destroy();
+  }
+}
 
 export interface S3AudioOptions {
   bucket: string;

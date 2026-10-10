@@ -19,7 +19,9 @@
     "seed": "tsx scripts/seed.ts",
     "setup-dynamo": "tsx scripts/setup-dynamo.ts",
     "create-table": "tsx scripts/setup-dynamo.ts",
-    "put-s3-lifecycle": "tsx scripts/put-s3-lifecycle.ts",
+    "ensure-s3-lifecycle": "tsx scripts/ensure-s3-lifecycle.ts",
+    "put-s3-lifecycle": "tsx scripts/ensure-s3-lifecycle.ts",
+    "live-infra-check": "tsx scripts/live-infra-check.ts",
     "email-worker": "tsx scripts/email-worker.ts",
     "live-ingest": "tsx scripts/live-ingest.ts",
     "make-fixture-pdf": "tsx scripts/make-fixture-pdf.ts"
