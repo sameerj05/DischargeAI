@@ -3,9 +3,25 @@
   "provider": "bedrock",
   "modelId": "us.anthropic.claude-sonnet-4-6",
   "region": "us-west-2",
-  "date": "2026-10-10T19:42:17.348Z",
+  "date": "2026-10-10T21:08:27.147Z",
   "example": "example-1-chf",
-  "wallMs": 46183,
+  "docStore": {
+    "name": "dynamo",
+    "table": "discharge-summaries",
+    "hashKey": "uid",
+    "configSource": "secret"
+  },
+  "cleanup": {
+    "kept": false,
+    "documents": [
+      "raw",
+      "simplified",
+      "translation#es"
+    ],
+    "deleted": 3,
+    "remaining": []
+  },
+  "wallMs": 52995,
   "job": {
     "stage": "done",
     "warnings": [],
@@ -15,20 +31,28 @@
       "model": "us.anthropic.claude-sonnet-4-6",
       "usage": {
         "inputTokens": 3658,
-        "outputTokens": 2110,
-        "totalTokens": 5768
+        "outputTokens": 2270,
+        "totalTokens": 5928
       },
-      "llmMs": 15861,
-      "sourceChars": 4760
+      "llmMs": 16205,
+      "sourceChars": 4760,
+      "stages": [
+        "simplify:bedrock",
+        "safetyCheck:deterministic"
+      ],
+      "languages": [
+        "en"
+      ],
+      "fidelity": "passed"
     }
   },
   "summary": {
     "readingLevel": "grade5",
     "language": "en",
-    "summary": "You were in the hospital for a weak heart and lung infection. Your heart was not pumping well and fluid built up in your lungs and legs. You also had a kidney injury that got better. Some of your medicines changed while you were here. The most important thing to do at home is weigh yourself every morning and call your care team if your weight goes up fast.",
+    "summary": "You were in the hospital for a weak heart and lung infection. Your heart was not pumping well and fluid built up in your lungs and legs. You also had a mild kidney injury that got better. Some of your medicines were changed to help your heart and kidneys. The most important thing to do at home is weigh yourself every morning and call your care team if your weight goes up fast.",
     "diagnoses": [
       {
-        "plain": "Weak heart that does not pump well (pump strength was 30%)",
+        "plain": "Weak heart that does not pump well (ejection fraction 30%)",
         "clinical": "Acute on chronic HFrEF, EF 30%"
       },
       {
@@ -36,7 +60,7 @@
         "clinical": "Community-acquired right lower lobe pneumonia"
       },
       {
-        "plain": "Kidney injury that got better before you went home",
+        "plain": "Mild kidney injury that got better",
         "clinical": "Acute kidney injury, improved"
       },
       {
@@ -48,11 +72,11 @@
         "clinical": "Type 2 diabetes mellitus"
       },
       {
-        "plain": "Long-term irregular heartbeat",
+        "plain": "Irregular heartbeat (atrial fibrillation)",
         "clinical": "Chronic atrial fibrillation"
       },
       {
-        "plain": "Long-term low red blood cell count",
+        "plain": "Low red blood cell count (anemia)",
         "clinical": "Chronic anemia"
       }
     ],
@@ -62,29 +86,25 @@
           "name": "Furosemide",
           "dose": "40 mg",
           "howOften": "once a day by mouth",
-          "why": "To remove extra fluid from your body",
-          "startDate": "at discharge"
+          "why": "To remove extra fluid from your body (volume management)"
         },
         {
           "name": "Losartan",
           "dose": "25 mg",
           "howOften": "once a day by mouth",
-          "why": "To help your heart and lower your blood pressure",
-          "startDate": "at discharge"
+          "why": "To help your heart and lower your blood pressure"
         },
         {
           "name": "Empagliflozin",
           "dose": "10 mg",
           "howOften": "once a day by mouth",
-          "why": "To help your heart and manage your blood sugar",
-          "startDate": "at discharge"
+          "why": "To help your heart and manage your blood sugar"
         },
         {
           "name": "Amoxicillin-clavulanate",
           "dose": "875/125 mg",
           "howOften": "twice a day by mouth for 3 more days",
-          "why": "To finish treating your lung infection",
-          "startDate": "at discharge"
+          "why": "To finish treating your lung infection (pneumonia)"
         }
       ],
       "continue": [
@@ -116,11 +136,11 @@
       "stop": [
         {
           "name": "Lisinopril",
-          "why": "Stopped because your medicine was changed to losartan"
+          "why": "Stopped because your medicine was changed to Losartan"
         },
         {
           "name": "Spironolactone",
-          "why": "On hold until your doctor checks your kidney function and potassium level"
+          "why": "On hold until your doctor checks your kidney function and potassium levels"
         },
         {
           "name": "Ibuprofen/other NSAIDs",
@@ -132,26 +152,50 @@
       {
         "id": "med-1",
         "type": "med",
-        "text": "Take furosemide 40 mg every morning — try to take it early in the day",
+        "text": "Take Furosemide 40 mg every morning by mouth",
         "due": "every morning"
       },
       {
         "id": "med-2",
         "type": "med",
-        "text": "Take losartan 25 mg once a day",
-        "due": "every day"
+        "text": "Take Losartan 25 mg every morning by mouth",
+        "due": "every morning"
       },
       {
         "id": "med-3",
         "type": "med",
-        "text": "Take empagliflozin 10 mg once a day",
-        "due": "every day"
+        "text": "Take Empagliflozin 10 mg every morning by mouth",
+        "due": "every morning"
       },
       {
         "id": "med-4",
         "type": "med",
-        "text": "Finish all 3 remaining days of amoxicillin-clavulanate 875/125 mg twice a day — even if you feel better",
+        "text": "Take Amoxicillin-clavulanate 875/125 mg twice a day — finish all 3 days even if you feel better",
         "due": "twice a day for 3 more days"
+      },
+      {
+        "id": "med-5",
+        "type": "med",
+        "text": "Take Metoprolol succinate 50 mg once a day",
+        "due": "every day"
+      },
+      {
+        "id": "med-6",
+        "type": "med",
+        "text": "Take Apixaban 5 mg twice a day",
+        "due": "twice a day"
+      },
+      {
+        "id": "med-7",
+        "type": "med",
+        "text": "Take Atorvastatin 40 mg every night",
+        "due": "every night"
+      },
+      {
+        "id": "med-8",
+        "type": "med",
+        "text": "Take Metformin 500 mg twice a day (only if kidneys stay stable)",
+        "due": "twice a day"
       },
       {
         "id": "vital-1",
@@ -162,13 +206,13 @@
       {
         "id": "vital-2",
         "type": "vital",
-        "text": "Write down any new symptoms each day along with your weight",
+        "text": "Keep a written record of your weight and any new symptoms",
         "due": "every day"
       },
       {
         "id": "lab-1",
         "type": "lab",
-        "text": "Get a basic metabolic panel blood test to check your kidneys and potassium",
+        "text": "Get a basic metabolic panel blood test (checks kidneys and potassium)",
         "due": "before or at your first follow-up visit within 1 week"
       },
       {
@@ -198,8 +242,8 @@
       {
         "id": "life-3",
         "type": "lifestyle",
-        "text": "Do not take ibuprofen or any other NSAIDs (anti-inflammatory pain relievers) unless your doctor says it is okay",
-        "due": "ongoing"
+        "text": "Do not take ibuprofen or any other NSAIDs (pain relievers like Advil or Aleve)",
+        "due": "every day"
       }
     ],
     "returnPrecautions": {
@@ -210,14 +254,14 @@
       ],
       "goToER": [
         "New or worsening shortness of breath, especially at rest",
-        "Legs or belly swelling up fast",
-        "Much less urine than normal"
+        "Rapidly worsening swelling in your legs or belly",
+        "Significant decrease in urine output"
       ],
       "callClinic": [
-        "Your weight goes up quickly — follow the weight plan your heart-failure team gave you",
-        "Swelling or breathlessness gets worse",
-        "Fever or cough gets worse even while taking antibiotics",
-        "You notice signs of unusual bleeding (because you take apixaban, a blood thinner)"
+        "Your weight goes up fast — follow the weight-action plan your heart-failure team gave you",
+        "Worsening swelling or breathlessness that is not an emergency",
+        "Fever or worsening cough even while taking antibiotics",
+        "Any signs of unusual bleeding (because you take apixaban, a blood thinner)"
       ]
     },
     "followUps": [
@@ -232,32 +276,36 @@
         "why": "To review your heart function and adjust your heart medicines"
       },
       {
-        "who": "Heart-failure team or primary care doctor",
-        "when": "Within about 1 week",
-        "why": "To review your blood test results for kidney function and potassium, and decide about restarting spironolactone"
+        "who": "Heart-failure team or primary care",
+        "when": "Within about 1 week (before or at the visit)",
+        "why": "To check your kidney function and potassium level with a blood test"
       }
     ],
     "questionsToAsk": [
-      "At what number on the scale should I call the clinic about a weight gain?",
-      "When will you decide if it is safe to restart spironolactone?",
-      "Are there any pain relievers I can safely use instead of ibuprofen?",
-      "What signs of bleeding should I watch for while taking apixaban?",
-      "How will you know if my kidney function is stable enough to keep taking metformin?"
+      "At what weight gain should I call the clinic versus go to the emergency room?",
+      "When will you decide if it is safe to restart Spironolactone?",
+      "Are there any signs of bleeding I should watch for while taking Apixaban?",
+      "How will you know if my kidneys are stable enough to keep taking Metformin?",
+      "Is there anything specific I should do if I miss a dose of Furosemide or Losartan?"
     ],
     "status": "ready",
-    "expiresAt": "2026-11-09T19:41:31.204Z",
+    "expiresAt": "2026-11-09T21:07:34.185Z",
     "daysLeft": 30,
-    "createdAt": "2026-10-10T19:41:31.204Z",
+    "createdAt": "2026-10-10T21:07:34.185Z",
     "warnings": [],
     "needsReview": false,
     "checklistState": [],
+    "readyLanguages": [
+      "en"
+    ],
     "verification": {
       "provider": "bedrock",
       "model": "us.anthropic.claude-sonnet-4-6",
       "fidelityCheck": "passed",
-      "readabilityGrade": 4,
+      "readabilityGrade": 4.3,
       "sourceChars": 4760,
-      "inputKind": "text"
+      "inputKind": "text",
+      "synthesisCount": 1
     }
   },
   "translation": {
@@ -268,38 +316,34 @@
       "provider": "bedrock",
       "model": "us.anthropic.claude-sonnet-4-6",
       "backTranslationCheck": "passed",
-      "translatedAt": "2026-10-10T19:42:17.344Z"
+      "translatedAt": "2026-10-10T21:08:26.220Z"
     },
-    "summary": "Usted estuvo en el hospital por un corazón débil y una infección en los pulmones. Su corazón no bombeaba bien y se acumuló líquido en sus pulmones y piernas. También tuvo una lesión en los riñones que mejoró. Algunos de sus medicamentos cambiaron mientras estuvo aquí. Lo más importante que debe hacer en casa es pesarse cada mañana y llamar a su equipo de salud si su peso sube rápido.",
+    "summary": "Usted estuvo en el hospital por un corazón débil y una infección en los pulmones. Su corazón no bombeaba bien y se acumuló líquido en los pulmones y las piernas. También tuvo una lesión leve en los riñones que mejoró. Se cambiaron algunos de sus medicamentos para ayudar al corazón y los riñones. Lo más importante que debe hacer en casa es pesarse cada mañana y llamar a su equipo de salud si su peso sube rápido.",
     "medications": {
       "new": [
         {
           "name": "Furosemide",
           "dose": "40 mg",
           "howOften": "una vez al día por la boca",
-          "why": "Para eliminar el exceso de líquido de su cuerpo",
-          "startDate": "al momento del alta"
+          "why": "Para eliminar el exceso de líquido de su cuerpo (control de volumen)"
         },
         {
           "name": "Losartan",
           "dose": "25 mg",
           "howOften": "una vez al día por la boca",
-          "why": "Para ayudar a su corazón y bajar su presión arterial",
-          "startDate": "al momento del alta"
+          "why": "Para ayudar a su corazón y bajar su presión arterial"
         },
         {
           "name": "Empagliflozin",
           "dose": "10 mg",
           "howOften": "una vez al día por la boca",
-          "why": "Para ayudar a su corazón y controlar su azúcar en la sangre",
-          "startDate": "al momento del alta"
+          "why": "Para ayudar a su corazón y controlar su azúcar en la sangre"
         },
         {
           "name": "Amoxicillin-clavulanate",
           "dose": "875/125 mg",
           "howOften": "dos veces al día por la boca durante 3 días más",
-          "why": "Para terminar de tratar su infección pulmonar",
-          "startDate": "al momento del alta"
+          "why": "Para terminar el tratamiento de su infección pulmonar (neumonía)"
         }
       ],
       "continue": [
@@ -331,17 +375,80 @@
       "stop": [
         {
           "name": "Lisinopril",
-          "why": "Se suspendió porque su medicamento fue cambiado a losartan"
+          "why": "Se suspendió porque su medicamento fue cambiado a Losartan"
         },
         {
           "name": "Spironolactone",
-          "why": "En pausa hasta que su médico revise la función de sus riñones y su nivel de potasio"
+          "why": "En pausa hasta que su médico revise la función de sus riñones y sus niveles de potasio"
         },
         {
           "name": "Ibuprofen/other NSAIDs",
           "why": "No tome estos analgésicos — pueden empeorar la insuficiencia cardíaca y los problemas de riñón"
         }
       ]
+    }
+  },
+  "patientView": {
+    "keys": [
+      "language",
+      "readingLevel",
+      "steps",
+      "medications",
+      "followUps",
+      "warnings",
+      "summary",
+      "diagnoses",
+      "checklist",
+      "questionsToAsk"
+    ],
+    "medications": 11,
+    "steps": 16,
+    "warnings": 10,
+    "meta": {
+      "languages": {
+        "ready": [
+          "en",
+          "es"
+        ],
+        "supported": [
+          "en",
+          "es",
+          "zh",
+          "ar",
+          "pt",
+          "fr",
+          "ht",
+          "ru",
+          "ko",
+          "vi",
+          "tl",
+          "hi",
+          "gu",
+          "pl",
+          "it",
+          "de",
+          "ja",
+          "ur",
+          "bn",
+          "fa"
+        ]
+      },
+      "safetyChecks": {
+        "fidelity": "passed",
+        "readabilityGrade": 4.3,
+        "warnings": []
+      },
+      "provenance": {
+        "provider": "bedrock",
+        "model": "us.anthropic.claude-sonnet-4-6",
+        "inputKind": "text",
+        "sourceChars": 4760,
+        "stages": [
+          "simplify:bedrock",
+          "safetyCheck:deterministic"
+        ],
+        "synthesisCount": 1
+      }
     }
   }
 }

@@ -1,0 +1,109 @@
+{
+  "date": "2026-10-10T21:04:27.303Z",
+  "note": "names and outcomes only; no secret values, no PHI",
+  "secretsManager": {
+    "ok": true,
+    "source": "secret",
+    "loaded": true,
+    "keys": [
+      "dynamodb-table",
+      "dynamodb-table-pk",
+      "mysql-db",
+      "mysql-host",
+      "mysql-password",
+      "mysql-port",
+      "mysql-user"
+    ],
+    "applied": [
+      "DYNAMO_TABLE",
+      "DYNAMO_PK",
+      "MYSQL_DATABASE",
+      "MYSQL_HOST",
+      "MYSQL_PASSWORD",
+      "MYSQL_PORT",
+      "MYSQL_USER"
+    ],
+    "kept": [],
+    "unknownKeys": [],
+    "secretArn": "arn:aws:secretsmanager:us-west-2:183815333909:secret:hackhealth/secret-ZWa02Q"
+  },
+  "region": "us-west-2",
+  "dynamodb": {
+    "ok": true,
+    "ms": 1075,
+    "table": "discharge-summaries",
+    "hashKey": "uid",
+    "status": "ACTIVE",
+    "keySchema": [
+      {
+        "AttributeName": "uid",
+        "KeyType": "HASH"
+      }
+    ],
+    "itemCountBefore": 0,
+    "ttl": {
+      "TimeToLiveStatus": "ENABLED",
+      "AttributeName": "expiresAt"
+    },
+    "probe": {
+      "uid": "link#77bed0a77bd5b723ed106bd2b132fd50a5c7dea0a1589830a5df9a8d6fea8ce1",
+      "put": 2,
+      "got": true,
+      "listed": [
+        "simplified",
+        "translation#es"
+      ],
+      "afterRemoveOne": [
+        "simplified"
+      ],
+      "deletedByDeleteAll": 1,
+      "remaining": []
+    }
+  },
+  "s3": {
+    "ok": true,
+    "ms": 1169,
+    "bucket": "emraudio-rh",
+    "lifecycle": [
+      {
+        "id": "autodelete",
+        "status": "Enabled",
+        "prefix": "",
+        "expirationDays": 30,
+        "coversAudio": true
+      }
+    ],
+    "coveredBy": "autodelete",
+    "probe": {
+      "key": "audio/3829e2281cb22c12b03385ec9d75d1705f0c6bc3ad73aa53ad26b1909ac5f1e5",
+      "bytes": 51,
+      "sse": "AES256",
+      "headOk": true,
+      "getOk": true,
+      "deleted": true,
+      "afterDelete": null
+    }
+  },
+  "bedrock": {
+    "ok": true,
+    "ms": 1174,
+    "modelId": "us.anthropic.claude-sonnet-4-6",
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 14,
+      "outputTokens": 4,
+      "totalTokens": 18,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "latencyMs": 636,
+    "reply": "ok"
+  },
+  "mysqlTcp": {
+    "ok": false,
+    "required": false,
+    "ms": 4046,
+    "errorName": "Error",
+    "error": "TCP connect to patients.cleqcmkoulma.us-west-2.rds.amazonaws.com:3306 timed out"
+  }
+}
