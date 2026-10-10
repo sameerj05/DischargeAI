@@ -12,7 +12,7 @@ Advik's words: "the granola doc takes precedent over the diagram bc diagram coul
 
 ## Run it
 
-One command after `npm install` (Node 22):
+One command after `npm install` (Node 24; `.nvmrc` says `24`, `engines` says `>=24`, and better-sqlite3 ships a prebuilt binary for it, so no `npm rebuild`):
 
 ```sh
 cd backend && npm install && npm run dev

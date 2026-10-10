@@ -133,7 +133,7 @@ As a teammate, I want to drop in my own simplifier or translator by replacing on
 ## Non-functional requirements
 
 - No PHI in logs: pino with redaction of bodies, emails, text fields and the provider key; request logs carry only method, path, status, latency and link hash prefix.
-- Node 22, TypeScript (ESM, NodeNext), Express 5, zod 4, better-sqlite3 by default, MariaDB/MySQL via `mysql2` (the team's production database).
+- Node 24 (`engines >=24`, `.nvmrc`), TypeScript (ESM, NodeNext), Express 5, zod 4, better-sqlite3 by default (prebuilt binary for Node 24), MariaDB/MySQL via `mysql2` (the team's production database).
 - Tests: vitest, offline providers, 88 tests in 19 files on 10 Oct 2026, counts recorded in README.
 - Product law: the backend never emits text a user sends as their own. It explains and translates the clinician's instructions and speaks as itself.
 - Copy: confident present tense, no product-history narration, no em dashes.

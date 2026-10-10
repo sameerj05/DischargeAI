@@ -47,7 +47,7 @@ Each stage is an interface. Swap the model with `LLM_PROVIDER`, or replace a sta
 
 ### Storage and the 30-day clock (lanes 2 and 4)
 
-- **SQL** (SQLite by default; the team's RDS MariaDB instance through `mysql2` with TLS when its host is known, see `backend/README.md`) holds patients, links, jobs, the audit log and checklist state. The link table stores only the SHA-256 of the link id and a per-link AES-256-GCM data key. A database dump reveals no usable links.
+- **SQL** (SQLite by default; the team's RDS MariaDB instance through `mysql2` with TLS when its host is known, see `backend/README.md`) holds patients, links, jobs, the audit log and checklist state. The links table stores only the SHA-256 of the link id and a per-link AES-256-GCM data key, so a link cannot be reconstructed from that table. The patient row holds the patient's one active link id in the clear (`patients.active_link_id`, the API note's "active patient link", returned by `GET /patients` so a provider can resend it) until the purge clears it on day 30; the sealed clinician text carries the same id so a restarted job can rebuild the email. A dump of the SQL database therefore reveals the active links of patients whose 30 days have not passed, and nothing after that.
 - **Document store** (DynamoDB table `discharge-summaries`, hash key `uid`, TTL attribute `expiresAt`; or a SQLite twin with the same shape) holds the encrypted clinician text, the simplified JSON and each translation. Every item carries `expiresAt` in epoch seconds so DynamoDB's own TTL deletes it.
 - **Audio** is sealed with the same per-link key, in a local directory or an S3 bucket with server-side encryption and a 30-day lifecycle rule.
 - **Expiry** is `createdAt + 30 days`, computed in code from an injectable clock. Every patient read compares it to the clock before touching the store and answers `410` once it has passed, independent of any background job.
@@ -57,7 +57,7 @@ Each stage is an interface. Swap the model with `LLM_PROVIDER`, or replace a sta
 ## Repository layout
 
 ```
-backend/    Node 22 + TypeScript + Express 5 API, pipeline, stores, purge job, tests, OpenAPI
+backend/    Node 24 + TypeScript + Express 5 API, pipeline, stores, purge job, tests, OpenAPI
 frontend/   Vite + React 19 + Tailwind 4 provider portal
 scripts/    host setup script (git, Python 3, Node 24, MariaDB)
 certs/      AWS RDS certificate bundle
@@ -91,7 +91,7 @@ cd backend
 npm run demo
 ```
 
-It ingests the sample CHF discharge summary, polls the job, shows the printed patient email, reads the summary, translates it to Spanish (the second call comes from cache), ticks a checklist item, advances the clock 30 days to get a `410`, runs the purge, prints the PHI-free audit trail, and resets the clock.
+It ingests the sample CHF discharge summary with Spanish, Mandarin and Arabic picked, polls the job, shows the printed patient email, reads the summary and the `/p/:token` contract, serves the three picked languages from the store and Portuguese on demand (cached on the second call), ticks a checklist item, runs `POST /synthesize` as a dry run, advances the clock 30 days to get a `410` (expired, or already purged if the interval job fired first), runs the purge, prints the PHI-free audit trail with the deletion receipts, and resets the clock. Everything goes to stdout, so `npm run demo > demo.log 2>&1` keeps the whole run; start the server with `PURGE_INTERVAL_MS=0` when only the explicit purge should run.
 
 Frontend:
 
@@ -119,14 +119,14 @@ Set these in `backend/.env` to leave offline mode. AWS credentials come from the
 | --- | --- | --- |
 | `LLM_PROVIDER` | `offline` | `bedrock` (model from `BEDROCK_MODEL_ID`, region from `AWS_REGION`) or `anthropic` (needs `ANTHROPIC_API_KEY`) |
 | `TRANSCRIBE_PROVIDER` | `offline` | `aws`, with `TRANSCRIBE_BUCKET` and `TRANSCRIBE_OUTPUT_BUCKET` |
-| `DOC_STORE` | `local` | `dynamo`, with `DYNAMO_TABLE` and `DYNAMO_PK`; set `DYNAMO_ENDPOINT` for DynamoDB Local (`docker compose up -d`, then `npm run setup-dynamo`) |
-| `AUDIO_STORE` | `local` | `s3`, with `AUDIO_BUCKET`; run `npm run put-s3-lifecycle` once to install the 30-day rule |
+| `DOC_STORE` | `auto` (the SQL twin when no AWS credentials resolve; the real DynamoDB table `discharge-summaries` as soon as the team secret loads) | `dynamo` or `local` to force one, with `DYNAMO_TABLE` and `DYNAMO_PK`; set `DYNAMO_ENDPOINT` for DynamoDB Local (`docker compose up -d`, then `npm run setup-dynamo`) |
+| `AUDIO_STORE` | `auto` (the local directory when no AWS credentials resolve; the bucket `emraudio-rh` as soon as the team secret loads and `HeadBucket` succeeds) | `s3` or `local` to force one, with `AUDIO_BUCKET`; `npm run ensure-s3-lifecycle` verifies the bucket's existing 30-day rule and adds one only to a bucket without it |
 | `EMAIL_TRANSPORT` | `console` | `ses` or `smtp` (`SMTP_URL`); `EMAIL_QUEUE=sqs` hands off to `scripts/email-worker.ts`, which also exports a Lambda handler |
 | `DEMO_MODE` | `true` | `false` in anything resembling production; it unmounts the `/admin` routes |
 
-`backend/.env.example` lists every variable with a comment. The provider endpoints require the `x-provider-key` header, whose value is `PROVIDER_API_KEY`.
+`backend/.env.example` lists every variable with a comment. The provider endpoints require the `x-provider-key` header, whose value is `PROVIDER_API_KEY`. Because both stores default to `auto`, a laptop with AWS credentials in the shell switches to the real table and bucket without any other change; set `DOC_STORE=local` and `AUDIO_STORE=local` (or `SECRETS_BOOTSTRAP=off`) to stay local on purpose.
 
-AWS permissions the live path uses: Bedrock `InvokeModel`; DynamoDB `CreateTable`, `UpdateTimeToLive`, `DescribeTimeToLive`, `PutItem`, `GetItem`, `Query`, `DeleteItem`; S3 `PutObject`, `GetObject`, `DeleteObject`, `GetLifecycleConfiguration`, `PutLifecycleConfiguration`; Transcribe `StartMedicalTranscriptionJob`, `GetMedicalTranscriptionJob`; SES `SendEmail`; SQS `SendMessage`, `ReceiveMessage`, `DeleteMessage`.
+AWS permissions the live path uses (the full table with when each applies is in `backend/README.md`): Secrets Manager `GetSecretValue` on the team secret; Bedrock `InvokeModel` on the two inference profiles; DynamoDB `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Scan` on `discharge-summaries` plus `DescribeTable`, `DescribeTimeToLive`, `UpdateTimeToLive` (and `CreateTable` only when the table is missing) for `npm run setup-dynamo`; S3 `ListBucket` (HeadBucket), `PutObject`, `GetObject`, `DeleteObject`, `GetLifecycleConfiguration` (and `PutLifecycleConfiguration` only on a bucket without a 30-day rule); Transcribe `StartMedicalTranscriptionJob`, `GetMedicalTranscriptionJob`; SES `SendEmail`; SQS `SendMessage`, `ReceiveMessage`, `DeleteMessage`.
 
 ## API
 

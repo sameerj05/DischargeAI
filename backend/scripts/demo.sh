@@ -8,6 +8,8 @@
 #        and cached -> checklist tick -> POST /synthesize dry run -> day 30 arrives -> 410 -> purge
 #        -> deletion receipts in the audit trail.
 # Needs curl and node (for JSON parsing). Override BASE_URL / PROVIDER_API_KEY / PATIENT_ID / INPUT / LANGS as needed.
+# Everything is written to stdout, so `npm run demo > demo.log 2>&1` and `| tee demo.log` both keep the whole run.
+# For a rehearsal where only the explicit purge in step 11 should run, start the server with PURGE_INTERVAL_MS=0.
 set -eu
 
 BASE_URL="${BASE_URL:-http://localhost:${PORT:-4000}}"
@@ -88,16 +90,25 @@ step "9. Person C's endpoint: POST /synthesize { text, languages } runs the pipe
 SYN=$(curl -sS -H "x-provider-key: $KEY" -H 'content-type: application/json' --data-binary "$(node -e 'const fs=require("fs");console.log(JSON.stringify({text:fs.readFileSync(process.argv[1],"utf8"),languages:["es"]}))' "$INPUT")" "$BASE_URL/synthesize")
 echo "perLanguage keys: $(echo "$SYN" | json perLanguage | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Object.keys(JSON.parse(s)).join(" ")))')   stored: $(echo "$SYN" | json stored)   fidelity: $(echo "$SYN" | json meta.safetyChecks.fidelity)"
 
-step "10. Day 30 arrives (POST /admin/clock/advance 30 days) -> GET /summary and GET /p/:token are 410"
+# Patient reads after day 30. The body goes to stdout with the status on its own line (never -o
+# /dev/stderr: reopening it truncates a log the demo is being captured into). The read-time check
+# answers 410 link_expired on its own; if the interval purge job (PURGE_INTERVAL_MS, 60 s by default)
+# happened to fire first the body says link_purged instead. Both prove day 30 is enforced.
+read_410() { curl -sS -w '\nHTTP %{http_code}\n' "$1"; }
+receipts() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s)||[];console.log("  "+a.length+" receipt(s)");for(const r of a)console.log("  receipt",String(r.event).padEnd(16),r.what??(r.details&&(r.details.doc?r.details.table+"/"+r.details.doc:r.details.key?r.details.store+":"+r.details.key:"data key v"+r.details.keyVersion)))})'; }
+
+step "10. Day 30 arrives (POST /admin/clock/advance 30 days) -> GET /summary and GET /p/:token answer 410 (expired, or already purged if the interval job got there first)"
 curl -sS -H "x-provider-key: $KEY" -H 'content-type: application/json' -d '{"days":30}' "$BASE_URL/admin/clock/advance"; echo
-curl -sS -o /dev/stderr -w 'HTTP %{http_code}\n' "$BASE_URL/summary?link=$LINK_ID"
-curl -sS -o /dev/stderr -w 'HTTP %{http_code}\n' "$BASE_URL/p/$LINK_ID"
+read_410 "$BASE_URL/summary?link=$LINK_ID"
+read_410 "$BASE_URL/p/$LINK_ID"
 
 step "11. Purge runs now (POST /admin/purge): key destroyed, every document deleted, link purged, one receipt each"
 PURGE=$(curl -sS -H "x-provider-key: $KEY" -X POST "$BASE_URL/admin/purge")
-echo "linksPurged=$(echo "$PURGE" | json linksPurged) keysDestroyed=$(echo "$PURGE" | json keysDestroyed) documentsDeleted=$(echo "$PURGE" | json documentsDeleted) audioDeleted=$(echo "$PURGE" | json audioDeleted)"
-echo "$PURGE" | json receipts | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const r of JSON.parse(s))console.log("  receipt",r.event.padEnd(16),r.what)})'
-curl -sS -o /dev/stderr -w 'HTTP %{http_code}\n' "$BASE_URL/summary?link=$LINK_ID"
+echo "this run: linksPurged=$(echo "$PURGE" | json linksPurged) keysDestroyed=$(echo "$PURGE" | json keysDestroyed) documentsDeleted=$(echo "$PURGE" | json documentsDeleted) audioDeleted=$(echo "$PURGE" | json audioDeleted)"
+echo "this link's deletion receipts in the audit log (GET /audit?link=), whichever purge run wrote them:"
+curl -sS -H "x-provider-key: $KEY" "$BASE_URL/audit?link=$LINK_ID" | json deletionReceipts | receipts
+echo "the link after the purge:"
+read_410 "$BASE_URL/summary?link=$LINK_ID"
 
 step "12. Audit trail (GET /audit?link=...): events and the deletion receipts, no PHI"
 AUDIT=$(curl -sS -H "x-provider-key: $KEY" "$BASE_URL/audit?link=$LINK_ID")
