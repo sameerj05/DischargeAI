@@ -2,77 +2,80 @@ import type { Db } from "../db/index.js";
 import type { DocItem, DocumentStore } from "./types.js";
 
 interface Row {
-  pk: string;
-  sk: string;
+  uid: string;
+  doc: string;
   ciphertext: Buffer | Uint8Array;
   iv: Buffer | Uint8Array;
   tag: Buffer | Uint8Array;
-  keyVersion: number;
-  expiresAt: number | string;
-  createdAt: string;
+  key_version: number;
+  expires_at: number | string;
+  created_at: string;
 }
 
 function toItem(r: Row): DocItem {
   return {
-    pk: r.pk,
-    sk: r.sk,
+    uid: r.uid,
+    doc: r.doc,
     ciphertext: Buffer.from(r.ciphertext),
     iv: Buffer.from(r.iv),
     tag: Buffer.from(r.tag),
-    keyVersion: Number(r.keyVersion),
-    expiresAt: Number(r.expiresAt),
-    createdAt: r.createdAt,
+    keyVersion: Number(r.key_version),
+    expiresAt: Number(r.expires_at),
+    createdAt: r.created_at,
   };
 }
 
-/** The table name the DynamoDB store uses by default; the SQL twin uses the same name and attributes. */
-export const LOCAL_TABLE = "discharge_records";
+/** SQL spelling of the DynamoDB table name `discharge-summaries` (a hyphen is not a bare SQL identifier). */
+export const LOCAL_TABLE = "discharge_summaries";
 
 /**
- * The SQLite (or Postgres) twin of the DynamoDB table `discharge_records`: same item shape, same
- * attribute names (quoted so Postgres keeps the case), `expiresAt` as the TTL attribute. The purge
- * job and read-time expiry checks are the real 30-day enforcement in both implementations.
+ * The SQL twin of the DynamoDB table `discharge-summaries`: one row per (uid, doc) where DynamoDB
+ * has one item per uid with a document attribute per doc. Same hash key (`uid`), same TTL value
+ * (`expires_at`, epoch seconds) on every row. Used for local runs and the test suite; the purge job
+ * and read-time expiry checks are the real 30-day enforcement in both implementations.
  */
 export class LocalDocumentStore implements DocumentStore {
   readonly name = "local" as const;
   readonly tableName = LOCAL_TABLE;
+  readonly hashKey = "uid";
   constructor(private readonly db: Db) {}
 
   async put(item: DocItem): Promise<void> {
-    await this.db.run(
-      `INSERT INTO discharge_records (pk, sk, ciphertext, iv, tag, "keyVersion", "expiresAt", "createdAt")
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (pk, sk) DO UPDATE SET ciphertext = excluded.ciphertext, iv = excluded.iv, tag = excluded.tag,
-         "keyVersion" = excluded."keyVersion", "expiresAt" = excluded."expiresAt", "createdAt" = excluded."createdAt"`,
-      [item.pk, item.sk, item.ciphertext, item.iv, item.tag, item.keyVersion, item.expiresAt, item.createdAt],
+    await this.db.upsert(
+      LOCAL_TABLE,
+      ["uid", "doc"],
+      { uid: item.uid, doc: item.doc, ciphertext: item.ciphertext, iv: item.iv, tag: item.tag, key_version: item.keyVersion, expires_at: item.expiresAt, created_at: item.createdAt },
     );
   }
 
-  async get(pk: string, sk: string): Promise<DocItem | null> {
-    const row = await this.db.get<Row>("SELECT * FROM discharge_records WHERE pk = ? AND sk = ?", [pk, sk]);
+  async get(uid: string, doc: string): Promise<DocItem | null> {
+    const row = await this.db.get<Row>(`SELECT * FROM ${LOCAL_TABLE} WHERE uid = ? AND doc = ?`, [uid, doc]);
     return row ? toItem(row) : null;
   }
 
-  async list(pk: string, skPrefix?: string): Promise<DocItem[]> {
-    const rows = skPrefix
-      ? await this.db.all<Row>("SELECT * FROM discharge_records WHERE pk = ? AND sk LIKE ? ORDER BY sk", [pk, `${skPrefix}%`])
-      : await this.db.all<Row>("SELECT * FROM discharge_records WHERE pk = ? ORDER BY sk", [pk]);
+  async list(uid: string, docPrefix?: string): Promise<DocItem[]> {
+    const rows = docPrefix
+      ? await this.db.all<Row>(`SELECT * FROM ${LOCAL_TABLE} WHERE uid = ? AND doc LIKE ? ORDER BY doc`, [uid, `${docPrefix}%`])
+      : await this.db.all<Row>(`SELECT * FROM ${LOCAL_TABLE} WHERE uid = ? ORDER BY doc`, [uid]);
     return rows.map(toItem);
   }
 
-  async deleteAll(pk: string): Promise<number> {
-    const r = await this.db.run("DELETE FROM discharge_records WHERE pk = ?", [pk]);
+  async deleteAll(uid: string): Promise<number> {
+    const r = await this.db.run(`DELETE FROM ${LOCAL_TABLE} WHERE uid = ?`, [uid]);
     return r.changes;
   }
 
-  async listExpired(nowEpochSeconds: number, limit = 500): Promise<Pick<DocItem, "pk" | "sk">[]> {
-    return this.db.all<{ pk: string; sk: string }>(
-      `SELECT pk, sk FROM discharge_records WHERE "expiresAt" <= ? ORDER BY "expiresAt" LIMIT ?`,
-      [nowEpochSeconds, limit],
-    );
+  async delete(uid: string, doc: string): Promise<void> {
+    await this.db.run(`DELETE FROM ${LOCAL_TABLE} WHERE uid = ? AND doc = ?`, [uid, doc]);
   }
 
-  async delete(pk: string, sk: string): Promise<void> {
-    await this.db.run("DELETE FROM discharge_records WHERE pk = ? AND sk = ?", [pk, sk]);
+  async listExpired(nowEpochSeconds: number, limit = 500): Promise<{ uid: string; docs: string[] }[]> {
+    const rows = await this.db.all<{ uid: string; doc: string }>(
+      `SELECT uid, doc FROM ${LOCAL_TABLE} WHERE expires_at <= ? ORDER BY expires_at, uid, doc LIMIT ?`,
+      [nowEpochSeconds, limit],
+    );
+    const byUid = new Map<string, string[]>();
+    for (const r of rows) byUid.set(r.uid, [...(byUid.get(r.uid) ?? []), r.doc]);
+    return [...byUid.entries()].map(([uid, docs]) => ({ uid, docs }));
   }
 }

@@ -16,6 +16,7 @@ export function healthRouter(ctx: AppContext): Router {
         transcribe: ctx.transcriber.name,
         docStore: ctx.docStore.name,
         docTable: ctx.docStore.tableName,
+        docHashKey: ctx.docStore.hashKey,
         audioStore: ctx.audioStore.name,
         email: ctx.mailer.transportName,
         emailQueue: ctx.emailQueue ? "sqs" : "none",

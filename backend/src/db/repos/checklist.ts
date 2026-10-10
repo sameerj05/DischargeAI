@@ -17,11 +17,7 @@ export class ChecklistRepo {
   constructor(private readonly db: Db) {}
 
   async upsert(linkIdHash: string, itemId: string, completed: boolean, now: string): Promise<void> {
-    await this.db.run(
-      `INSERT INTO checklist_state (link_id_hash, item_id, completed, updated_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT (link_id_hash, item_id) DO UPDATE SET completed = excluded.completed, updated_at = excluded.updated_at`,
-      [linkIdHash, itemId, completed ? 1 : 0, now],
-    );
+    await this.db.upsert("checklist_state", ["link_id_hash", "item_id"], { link_id_hash: linkIdHash, item_id: itemId, completed: completed ? 1 : 0, updated_at: now });
   }
 
   async listForLink(linkIdHash: string): Promise<ChecklistItemState[]> {

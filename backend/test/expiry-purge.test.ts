@@ -2,7 +2,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hashLinkId } from "../src/crypto/linkId.js";
 import { aadFor, open } from "../src/crypto/envelope.js";
-import { pkFor } from "../src/docstore/types.js";
+import { uidFor } from "../src/docstore/types.js";
 import { createTestApp, exampleText, ingestText, type TestApp } from "./helpers.js";
 
 describe("30-day expiry and purge", () => {
@@ -40,9 +40,9 @@ describe("30-day expiry and purge", () => {
     const hash = hashLinkId(linkId);
     const before = await t.ctx.links.getByHash(hash);
     expect(before?.encKey).not.toBeNull();
-    const docsBefore = await t.ctx.docStore.list(pkFor(hash));
-    expect(docsBefore.map((d) => d.sk).sort()).toEqual(["raw", "simplified", "translation#es"]);
-    const keptCiphertext = docsBefore.find((d) => d.sk === "simplified")!;
+    const docsBefore = await t.ctx.docStore.list(uidFor(hash));
+    expect(docsBefore.map((d) => d.doc).sort()).toEqual(["raw", "simplified", "translation#es"]);
+    const keptCiphertext = docsBefore.find((d) => d.doc === "simplified")!;
     const keptKey = Buffer.from(before!.encKey!);
 
     const res = await t.provider(request(t.app).post("/admin/purge"));
@@ -56,14 +56,14 @@ describe("30-day expiry and purge", () => {
     const after = await t.ctx.links.getByHash(hash);
     expect(after?.status).toBe("purged");
     expect(after?.encKey).toBeNull();
-    expect(await t.ctx.docStore.list(pkFor(hash))).toEqual([]);
+    expect(await t.ctx.docStore.list(uidFor(hash))).toEqual([]);
     const patient = await t.ctx.patients.getById(patientId);
     expect(patient?.activeLinkId).toBeNull();
 
     // The only copy of the key is gone; the ciphertext we kept is unreadable with anything the system still holds.
-    expect(() => open(Buffer.alloc(32), keptCiphertext, aadFor(pkFor(hash), "simplified", 1))).toThrow();
+    expect(() => open(Buffer.alloc(32), keptCiphertext, aadFor(uidFor(hash), "simplified", 1))).toThrow();
     // (and only the destroyed key could ever have opened it)
-    expect(open(keptKey, keptCiphertext, aadFor(pkFor(hash), "simplified", 1)).length).toBeGreaterThan(0);
+    expect(open(keptKey, keptCiphertext, aadFor(uidFor(hash), "simplified", 1)).length).toBeGreaterThan(0);
 
     const gone = await request(t.app).get(`/summary?link=${linkId}`);
     expect(gone.status).toBe(410);
@@ -75,11 +75,12 @@ describe("30-day expiry and purge", () => {
     expect(events).toContain("key.destroyed");
     expect(events).toContain("link.purged");
     expect(audit.body.link.keyDestroyed).toBe(true);
-    // Deletion receipts: the key, then one per discharge_records item, each naming what and by which job.
+    // Deletion receipts: the key, then one per document on the discharge-summaries item, each naming what and by which job.
     const receipts = audit.body.deletionReceipts as { event: string; details: Record<string, unknown> }[];
     expect(receipts.map((r) => r.event)).toEqual(["key.destroyed", "record.deleted", "record.deleted", "record.deleted"]);
-    expect(receipts.slice(1).map((r) => r.details.sk)).toEqual(["raw", "simplified", "translation#es"]);
-    expect(receipts.slice(1).every((r) => r.details.table === "discharge_records" && r.details.job === "purge" && r.details.receipt === true)).toBe(true);
+    expect(receipts.slice(1).map((r) => r.details.doc)).toEqual(["raw", "simplified", "translation#es"]);
+    expect(receipts.slice(1).every((r) => r.details.uid === uidFor(hash))).toBe(true);
+    expect(receipts.slice(1).every((r) => r.details.table === "discharge_summaries" && r.details.job === "purge" && r.details.receipt === true)).toBe(true);
     expect(receipts[0].details).toMatchObject({ keyVersion: 1, job: "purge", reason: "expired" });
   });
 

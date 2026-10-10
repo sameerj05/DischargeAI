@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs DynamoDB Local without Docker (Java 17+ required). Downloads the jar from AWS on first use.
 #   sh scripts/dynamodb-local.sh            # in-memory on :8000
-#   DYNAMO_ENDPOINT=http://localhost:8000 npm run create-table
+#   DYNAMO_ENDPOINT=http://localhost:8000 npm run setup-dynamo
 #   DOC_STORE=dynamo DYNAMO_ENDPOINT=http://localhost:8000 npm run dev
 # Docker users: `docker compose up` does the same with amazon/dynamodb-local (see docker-compose.yml).
 set -eu

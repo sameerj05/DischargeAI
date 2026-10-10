@@ -3,7 +3,7 @@ import { toAiOutput } from "../agents/aiOutput.js";
 import type { SimplifiedSummary, StoredTranslation } from "../agents/types.js";
 import type { AppContext } from "../context.js";
 import type { ChecklistItemState } from "../db/repos/checklist.js";
-import { SK } from "../docstore/types.js";
+import { DOC } from "../docstore/types.js";
 import { badRequest } from "../errors.js";
 import { LANGUAGES, resolveLanguage, type Language } from "../languages.js";
 import { epochSeconds } from "../pipeline/ingestJob.js";
@@ -37,7 +37,7 @@ export async function loadLanguageView(ctx: AppContext, linkParam: unknown, lang
   const access = await resolveLink(ctx, linkParam);
   const now = ctx.clock.nowIso();
   const checklistState = await ctx.checklist.listForLink(access.linkIdHash);
-  const readyLanguages = ["en", ...(await ctx.secureDocs.listKeys(access.linkIdHash)).filter((k) => k.startsWith(SK.translationPrefix)).map((k) => k.slice(SK.translationPrefix.length))];
+  const readyLanguages = ["en", ...(await ctx.secureDocs.listDocs(access.linkIdHash)).filter((k) => k.startsWith(DOC.translationPrefix)).map((k) => k.slice(DOC.translationPrefix.length))];
   await ctx.links.touchViewed(access.linkIdHash, now);
 
   if (language.code === "en") {
@@ -46,8 +46,8 @@ export async function loadLanguageView(ctx: AppContext, linkParam: unknown, lang
   }
 
   const key = access.link.encKey!;
-  const sk = SK.translation(language.code);
-  const cached = await ctx.secureDocs.getJson<StoredTranslation>({ linkIdHash: access.linkIdHash, sk, key });
+  const doc = DOC.translation(language.code);
+  const cached = await ctx.secureDocs.getJson<StoredTranslation>({ linkIdHash: access.linkIdHash, doc, key });
   if (cached) {
     await ctx.audit.append({ event: "translation.viewed", linkIdHash: access.linkIdHash, actor: "patient", at: now, details: { language: language.code, fromCache: true } });
     return { access, language, summary: cached.translation, translation: cached, fromCache: true, readyLanguages, checklistState };
@@ -63,7 +63,7 @@ export async function loadLanguageView(ctx: AppContext, linkParam: unknown, lang
     model: r.model,
     createdAt: ctx.clock.nowIso(),
   };
-  await ctx.secureDocs.putJson({ linkIdHash: access.linkIdHash, sk, key, keyVersion: access.link.keyVersion, value: stored, expiresAtEpochSeconds: epochSeconds(access.expiresAt), createdAt: stored.createdAt });
+  await ctx.secureDocs.putJson({ linkIdHash: access.linkIdHash, doc, key, keyVersion: access.link.keyVersion, value: stored, expiresAtEpochSeconds: epochSeconds(access.expiresAt), createdAt: stored.createdAt });
   await ctx.audit.append({ event: "translation.created", linkIdHash: access.linkIdHash, actor: "patient", at: ctx.clock.nowIso(), details: { language: language.code, provider: r.provider, model: r.model, warningCount: r.warnings.length, latencyMs: r.latencyMs, atSynthesis: false } });
   return { access, language, summary: stored.translation, translation: stored, fromCache: false, readyLanguages: [...readyLanguages, language.code], checklistState };
 }

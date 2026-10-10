@@ -1,6 +1,6 @@
 # DynamoDB Local for DOC_STORE=dynamo demos without an AWS account.
 #   docker compose up -d
-#   DYNAMO_ENDPOINT=http://localhost:8000 npm run create-table
+#   DYNAMO_ENDPOINT=http://localhost:8000 npm run setup-dynamo
 #   DOC_STORE=dynamo DYNAMO_ENDPOINT=http://localhost:8000 npm run dev
 # Shape copied from the AWS DynamoDB Local docs page (see docs/research.md). Any non-empty fake
 # credentials work against it; the backend sets them automatically when DYNAMO_ENDPOINT is set.

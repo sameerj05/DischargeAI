@@ -16,7 +16,16 @@ export interface Db {
   get<T = Record<string, unknown>>(sql: string, params?: SqlParam[]): Promise<T | undefined>;
   all<T = Record<string, unknown>>(sql: string, params?: SqlParam[]): Promise<T[]>;
   exec(sql: string): Promise<void>;
+  /** Insert or update by the key columns; the one statement whose syntax differs per dialect. */
+  upsert(table: string, keyColumns: string[], row: Record<string, SqlParam>): Promise<void>;
   close(): Promise<void>;
+}
+
+/** `INSERT ... ON CONFLICT (keys) DO UPDATE SET ...` for SQLite and Postgres. */
+export function onConflictUpsertSql(table: string, keyColumns: string[], columns: string[]): string {
+  const updates = columns.filter((c) => !keyColumns.includes(c)).map((c) => `${c} = excluded.${c}`);
+  return `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})
+    ON CONFLICT (${keyColumns.join(", ")}) DO UPDATE SET ${updates.join(", ")}`;
 }
 
 export class SqliteDb implements Db {
@@ -33,6 +42,11 @@ export class SqliteDb implements Db {
   async run(sql: string, params: SqlParam[] = []) {
     const info = this.raw.prepare(sql).run(...params);
     return { changes: info.changes };
+  }
+
+  async upsert(table: string, keyColumns: string[], row: Record<string, SqlParam>) {
+    const columns = Object.keys(row);
+    await this.run(onConflictUpsertSql(table, keyColumns, columns), columns.map((c) => row[c]));
   }
 
   async get<T>(sql: string, params: SqlParam[] = []) {
@@ -72,6 +86,11 @@ export class PgDb implements Db {
   async run(sql: string, params: SqlParam[] = []) {
     const r = await this.pool.query(this.translate(sql), params);
     return { changes: r.rowCount ?? 0 };
+  }
+
+  async upsert(table: string, keyColumns: string[], row: Record<string, SqlParam>) {
+    const columns = Object.keys(row);
+    await this.run(onConflictUpsertSql(table, keyColumns, columns), columns.map((c) => row[c]));
   }
 
   async get<T>(sql: string, params: SqlParam[] = []) {

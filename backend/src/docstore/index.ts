@@ -8,6 +8,7 @@ export function createDocumentStore(config: Config, db: Db): DocumentStore {
   if (config.DOC_STORE === "dynamo") {
     return new DynamoDocumentStore({
       tableName: config.DYNAMO_TABLE,
+      hashKey: config.DYNAMO_PK,
       region: config.AWS_REGION,
       endpoint: config.DYNAMO_ENDPOINT,
     });
@@ -16,4 +17,4 @@ export function createDocumentStore(config: Config, db: Db): DocumentStore {
 }
 
 export type { DocumentStore, DocItem } from "./types.js";
-export { SK, pkFor } from "./types.js";
+export { DOC, uidFor, linkIdHashFromUid } from "./types.js";

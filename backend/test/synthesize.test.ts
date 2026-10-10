@@ -7,7 +7,7 @@ import { OfflineTranscriber } from "../src/agents/offline/transcriber.js";
 import { OfflineTranslator } from "../src/agents/offline/translator.js";
 import { createPipeline, type SimplifyStage } from "../src/agents/pipeline.js";
 import { hashLinkId } from "../src/crypto/linkId.js";
-import { pkFor } from "../src/docstore/types.js";
+import { uidFor } from "../src/docstore/types.js";
 import { createTestApp, exampleText, ingestText, type TestApp } from "./helpers.js";
 
 describe("POST /synthesize (the diagram's pipeline endpoint)", () => {
@@ -48,13 +48,13 @@ describe("POST /synthesize (the diagram's pipeline endpoint)", () => {
     const hash = hashLinkId(linkId);
     // A lazy Portuguese translation that the re-run will not regenerate: it must be deleted, not served stale.
     await request(t.app).get(`/translate?link=${linkId}&language=pt`);
-    expect((await t.ctx.docStore.list(pkFor(hash))).map((d) => d.sk).sort()).toEqual(["raw", "simplified", "translation#pt"]);
+    expect((await t.ctx.docStore.list(uidFor(hash))).map((d) => d.doc).sort()).toEqual(["raw", "simplified", "translation#pt"]);
 
     const res = await t.provider(request(t.app).post("/synthesize")).send({ linkId, languages: ["es"] });
     expect(res.status).toBe(200);
     expect(res.body.stored).toMatchObject({ status: "ready", documents: ["simplified", "translation#es"], staleTranslationsDeleted: 1, synthesisCount: 2 });
     expect(Object.keys(res.body.perLanguage)).toEqual(["en", "es"]);
-    expect((await t.ctx.docStore.list(pkFor(hash))).map((d) => d.sk).sort()).toEqual(["raw", "simplified", "translation#es"]);
+    expect((await t.ctx.docStore.list(uidFor(hash))).map((d) => d.doc).sort()).toEqual(["raw", "simplified", "translation#es"]);
 
     const view = await request(t.app).get(`/p/${linkId}?language=es`);
     expect(view.body.meta.fromCache).toBe(true);
@@ -69,7 +69,7 @@ describe("POST /synthesize (the diagram's pipeline endpoint)", () => {
     const events = audit.body.events.map((e: { event: string }) => e.event);
     expect(events).toContain("record.synthesized");
     const stale = audit.body.deletionReceipts.find((r: { event: string; details: Record<string, unknown> }) => r.event === "record.deleted");
-    expect(stale.details).toMatchObject({ sk: "translation#pt", reason: "resynthesized", job: "synthesize", receipt: true });
+    expect(stale.details).toMatchObject({ doc: "translation#pt", table: "discharge_summaries", reason: "resynthesized", job: "synthesize", receipt: true });
   });
 
   it("new text replaces the stored clinician text; a lying prompt is caught and the link flagged", async () => {

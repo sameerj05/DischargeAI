@@ -6,7 +6,7 @@ import { badRequest } from "../errors.js";
 
 /**
  * GET /audit?link=<linkId> (provider): the event trail for a link, with its deletion receipts
- * (key destroyed, each discharge_records item deleted, the audio object deleted) pulled out so the
+ * (key destroyed, each document on the discharge-summaries item deleted, the audio object deleted) pulled out so the
  * day-30 proof is one field. GET /audit/receipts (provider): every receipt in the log. Never PHI.
  */
 export function auditRouter(ctx: AppContext): Router {

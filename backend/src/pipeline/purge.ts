@@ -1,6 +1,7 @@
 import type { AppContext } from "../context.js";
 import { hashLinkId, hashPrefix } from "../crypto/linkId.js";
 import { linkIdHashFromAudioKey } from "../audiostore/types.js";
+import { linkIdHashFromUid, uidFor } from "../docstore/types.js";
 
 export interface PurgeReport {
   ranAt: string;
@@ -18,12 +19,13 @@ export interface PurgeReport {
 /**
  * The 30-day self-destruct, in code. For every link past its expiry:
  *   1. destroy the data key (crypto-shredding: anything still stored is unreadable from this moment),
- *   2. delete every discharge_records item for the link, one receipt each,
+ *   2. delete every document on the link's discharge-summaries item, one receipt each (the item
+ *      goes with its last document),
  *   3. delete the audio object (S3 or local), one receipt,
  *   4. mark the link purged, clear the patient's active link, drop the checklist state,
  *   5. write link.purged and purge.run.
- * Every receipt names what was deleted (table or bucket, key, sk), when, and the job that did it,
- * and never contains PHI. Read paths check expiry on their own, so a purge that has not run yet
+ * Every receipt names what was deleted (table or bucket, uid, document), when, and the job that did
+ * it, and never contains PHI. Read paths check expiry on their own, so a purge that has not run yet
  * never exposes data. DynamoDB TTL on `expiresAt` and the S3 lifecycle rule are backstops.
  */
 export async function runPurge(ctx: AppContext): Promise<PurgeReport> {
@@ -38,7 +40,7 @@ export async function runPurge(ctx: AppContext): Promise<PurgeReport> {
   const expired = await links.listExpiredUnpurged(ranAt);
   for (const link of expired) {
     const prefix = hashPrefix(link.linkIdHash);
-    const pk = `link#${link.linkIdHash}`;
+    const uid = uidFor(link.linkIdHash);
 
     if (link.encKey) {
       await links.destroyKey(link.linkIdHash);
@@ -47,10 +49,10 @@ export async function runPurge(ctx: AppContext): Promise<PurgeReport> {
     }
 
     let deleted = 0;
-    for (const item of await docStore.list(pk)) {
-      await docStore.delete(pk, item.sk);
+    for (const item of await docStore.list(uid)) {
+      await docStore.delete(uid, item.doc);
       deleted += 1;
-      await receipt("record.deleted", link.linkIdHash, { store: docStore.name, table: docStore.tableName, sk: item.sk, expiresAt: item.expiresAt, reason: "expired" }, `${docStore.tableName}/${item.sk}`);
+      await receipt("record.deleted", link.linkIdHash, { store: docStore.name, table: docStore.tableName, uid, doc: item.doc, expiresAt: item.expiresAt, reason: "expired" }, `${docStore.tableName}/${item.doc}`);
     }
 
     const audio = await audioStore.delete(link.linkIdHash);
@@ -77,9 +79,12 @@ export async function runPurge(ctx: AppContext): Promise<PurgeReport> {
   // S3 lifecycle do the same on AWS, with a lag; here it is exact).
   const now = clock.nowEpochSeconds();
   for (const item of await docStore.listExpired(now)) {
-    await docStore.delete(item.pk, item.sk);
-    report.orphanDocumentsDeleted += 1;
-    await receipt("record.deleted", item.pk.replace(/^link#/, ""), { store: docStore.name, table: docStore.tableName, sk: item.sk, reason: "ttl_backstop", job: "purge.backstop" }, `${docStore.tableName}/${item.sk}`);
+    await docStore.deleteAll(item.uid);
+    const linkIdHash = linkIdHashFromUid(item.uid);
+    for (const doc of item.docs.length ? item.docs : ["(empty item)"]) {
+      report.orphanDocumentsDeleted += 1;
+      await receipt("record.deleted", linkIdHash, { store: docStore.name, table: docStore.tableName, uid: item.uid, doc, reason: "ttl_backstop", job: "purge.backstop" }, `${docStore.tableName}/${doc}`);
+    }
   }
   for (const { linkIdHash, meta } of await audioStore.listExpired(now)) {
     await audioStore.delete(linkIdHash);

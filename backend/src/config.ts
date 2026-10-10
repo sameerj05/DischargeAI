@@ -41,7 +41,9 @@ export const ConfigSchema = z.object({
   DATABASE_URL: optionalString,
 
   DOC_STORE: z.enum(["local", "dynamo"]).default("local"),
-  DYNAMO_TABLE: z.string().default("discharge_records"),
+  /** The team's table and its hash key; Secrets Manager (`dynamodb-table`, `dynamodb-table-pk`) fills these when the secret loads. */
+  DYNAMO_TABLE: z.string().default("discharge-summaries"),
+  DYNAMO_PK: z.string().default("uid"),
   DYNAMO_ENDPOINT: optionalString,
   KEY_VERSION: int(1),
 

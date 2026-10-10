@@ -4,7 +4,7 @@ import type { AppContext } from "../context.js";
 import { hashPrefix } from "../crypto/linkId.js";
 import type { JobStage } from "../db/repos/jobs.js";
 import type { LinkRecord } from "../db/repos/links.js";
-import { SK } from "../docstore/types.js";
+import { DOC } from "../docstore/types.js";
 import { caregiverLinkEmail, patientLinkEmail } from "../email/templates.js";
 import { extractPdfText } from "../extract/pdf.js";
 import { normalizeText } from "../extract/text.js";
@@ -60,7 +60,7 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
 
     // 1. Get the clinician text: from memory, from the stored raw document, or (audio) from the
     //    stored clip (restart paths).
-    let raw: RawDocument | null = await secureDocs.getJson<RawDocument>({ linkIdHash: job.linkIdHash, sk: SK.raw, key }).catch(() => null);
+    let raw: RawDocument | null = await secureDocs.getJson<RawDocument>({ linkIdHash: job.linkIdHash, doc: DOC.raw, key }).catch(() => null);
     if (!raw) {
       let text: string;
       let kind: RawDocument["kind"];
@@ -99,7 +99,7 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
       const linkId = pending?.linkId ?? (await patients.getById(link.patientId))?.activeLinkId ?? "";
       if (!linkId) throw new Error("restart_before_extraction: the link id is not recoverable");
       raw = { text, kind, linkId };
-      await secureDocs.putJson({ linkIdHash: job.linkIdHash, sk: SK.raw, key, keyVersion: link.keyVersion, value: raw, expiresAtEpochSeconds: expiresAtEpoch, createdAt: clock.nowIso() });
+      await secureDocs.putJson({ linkIdHash: job.linkIdHash, doc: DOC.raw, key, keyVersion: link.keyVersion, value: raw, expiresAtEpochSeconds: expiresAtEpoch, createdAt: clock.nowIso() });
     }
     const { text, linkId } = raw;
 
@@ -185,11 +185,11 @@ export async function storePipelineResult(
     synthesizedLanguages: translated,
     synthesisCount: opts.synthesisCount,
   };
-  await ctx.secureDocs.putJson({ linkIdHash: link.linkIdHash, sk: SK.simplified, key, keyVersion: link.keyVersion, value: stored, expiresAtEpochSeconds: expiresAtEpoch, createdAt: now });
-  const documents: string[] = [SK.simplified];
+  await ctx.secureDocs.putJson({ linkIdHash: link.linkIdHash, doc: DOC.simplified, key, keyVersion: link.keyVersion, value: stored, expiresAtEpochSeconds: expiresAtEpoch, createdAt: now });
+  const documents: string[] = [DOC.simplified];
   for (const lang of translated) {
     const t = result.meta.translations[lang];
-    const doc: StoredTranslation = {
+    const stored: StoredTranslation = {
       translation: result.summaries[lang],
       backTranslation: result.backTranslations[lang],
       warnings: t?.warnings ?? [],
@@ -197,10 +197,10 @@ export async function storePipelineResult(
       model: t?.model,
       createdAt: now,
     };
-    const sk = SK.translation(lang);
-    await ctx.secureDocs.putJson({ linkIdHash: link.linkIdHash, sk, key, keyVersion: link.keyVersion, value: doc, expiresAtEpochSeconds: expiresAtEpoch, createdAt: now });
-    await ctx.audit.append({ event: "translation.created", linkIdHash: link.linkIdHash, actor: "system", at: now, details: { language: lang, provider: doc.provider, model: doc.model, warningCount: doc.warnings.length, atSynthesis: true } });
-    documents.push(sk);
+    const doc = DOC.translation(lang);
+    await ctx.secureDocs.putJson({ linkIdHash: link.linkIdHash, doc, key, keyVersion: link.keyVersion, value: stored, expiresAtEpochSeconds: expiresAtEpoch, createdAt: now });
+    await ctx.audit.append({ event: "translation.created", linkIdHash: link.linkIdHash, actor: "system", at: now, details: { language: lang, provider: stored.provider, model: stored.model, warningCount: stored.warnings.length, atSynthesis: true } });
+    documents.push(doc);
   }
   return { documents };
 }

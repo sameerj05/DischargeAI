@@ -2,7 +2,7 @@ import type { StoredSummary } from "../agents/types.js";
 import type { AppContext } from "../context.js";
 import { hashLinkId, isLinkIdShaped } from "../crypto/linkId.js";
 import type { LinkRecord } from "../db/repos/links.js";
-import { SK } from "../docstore/types.js";
+import { DOC } from "../docstore/types.js";
 import { badRequest, gone, notFound, tooEarly } from "../errors.js";
 
 export interface LinkAccess {
@@ -47,7 +47,7 @@ export async function resolveLink(ctx: AppContext, linkParam: unknown): Promise<
     throw Object.assign(new Error("processing_failed"), { status: 500 });
   }
 
-  const stored = await ctx.secureDocs.getJson<StoredSummary>({ linkIdHash, sk: SK.simplified, key: link.encKey });
+  const stored = await ctx.secureDocs.getJson<StoredSummary>({ linkIdHash, doc: DOC.simplified, key: link.encKey });
   if (!stored) throw tooEarly("processing", "Your summary is still being prepared", { stage: job?.stage ?? "stored" });
 
   const daysLeft = Math.max(0, Math.ceil((expiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));

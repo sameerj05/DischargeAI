@@ -63,6 +63,7 @@ describe("audio store (lane 4: S3 audio bucket / local twin)", () => {
     const hash = hashLinkId(res.body.linkId);
     // Simulate "process died after storing the clip": drop the derived documents and re-run with no pending input.
     await t.ctx.docStore.deleteAll(`link#${hash}`);
+    expect(await t.ctx.docStore.list(`link#${hash}`)).toEqual([]);
     await t.ctx.jobs.setStage(res.body.jobId, "transcribing", t.ctx.clock.nowIso());
     await t.ctx.links.setStatus(hash, "pending");
     const { runIngestJob } = await import("../src/pipeline/ingestJob.js");
@@ -96,8 +97,8 @@ describe("audio store (lane 4: S3 audio bucket / local twin)", () => {
     const receipts = audit.body.deletionReceipts as { event: string; details: Record<string, unknown> }[];
     expect(receipts.map((r) => r.event).sort()).toEqual(["audio.deleted", "key.destroyed", "record.deleted", "record.deleted"]);
     expect(receipts.find((r) => r.event === "audio.deleted")!.details).toMatchObject({ store: "local", key: `audio/${hash}`, job: "purge", receipt: true, reason: "expired" });
-    expect(receipts.filter((r) => r.event === "record.deleted").map((r) => r.details.sk).sort()).toEqual(["raw", "simplified"]);
-    expect(receipts.every((r) => r.details.table === "discharge_records" || r.event !== "record.deleted")).toBe(true);
+    expect(receipts.filter((r) => r.event === "record.deleted").map((r) => r.details.doc).sort()).toEqual(["raw", "simplified"]);
+    expect(receipts.every((r) => r.details.table === "discharge_summaries" || r.event !== "record.deleted")).toBe(true);
     expect(JSON.stringify(receipts)).not.toContain("Furosemide");
 
     const all = await t.provider(request(t.app).get("/audit/receipts"));

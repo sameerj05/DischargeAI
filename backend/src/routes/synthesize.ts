@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { StoredSummary } from "../agents/types.js";
 import type { AppContext } from "../context.js";
 import { hashLinkId, hashPrefix, isLinkIdShaped } from "../crypto/linkId.js";
-import { SK, pkFor } from "../docstore/types.js";
+import { DOC, uidFor } from "../docstore/types.js";
 import { AppError, badRequest, gone, notFound } from "../errors.js";
 import { isEmptyText, normalizeText } from "../extract/text.js";
 import { resolveLanguages } from "../agents/pipeline.js";
@@ -54,11 +54,11 @@ export function synthesizeRouter(ctx: AppContext): Router {
 
     let text: string;
     let inputKind: StoredSummary["inputKind"] = "text";
-    const existingRaw = await ctx.secureDocs.getJson<RawDocument>({ linkIdHash, sk: SK.raw, key }).catch(() => null);
+    const existingRaw = await ctx.secureDocs.getJson<RawDocument>({ linkIdHash, doc: DOC.raw, key }).catch(() => null);
     if (!isEmptyText(body.text)) {
       text = normalizeText(body.text!);
       const raw: RawDocument = { text, kind: "text", linkId: body.linkId };
-      await ctx.secureDocs.putJson({ linkIdHash, sk: SK.raw, key, keyVersion: link.keyVersion, value: raw, expiresAtEpochSeconds: epochSeconds(link.expiresAt), createdAt: ctx.clock.nowIso() });
+      await ctx.secureDocs.putJson({ linkIdHash, doc: DOC.raw, key, keyVersion: link.keyVersion, value: raw, expiresAtEpochSeconds: epochSeconds(link.expiresAt), createdAt: ctx.clock.nowIso() });
     } else if (existingRaw) {
       text = existingRaw.text;
       inputKind = existingRaw.kind;
@@ -67,7 +67,7 @@ export function synthesizeRouter(ctx: AppContext): Router {
     }
 
     const picked = resolveLanguages([...requested, ...link.languages, ...(link.language ? [link.language] : [])]).languages.map((l) => l.code);
-    const previous = await ctx.secureDocs.getJson<StoredSummary>({ linkIdHash, sk: SK.simplified, key }).catch(() => null);
+    const previous = await ctx.secureDocs.getJson<StoredSummary>({ linkIdHash, doc: DOC.simplified, key }).catch(() => null);
     const job = await ctx.jobs.create({ linkIdHash, inputKind, now: ctx.clock.nowIso(), meta: { synthesize: true, languages: picked, sourceChars: text.length } });
     try {
       await ctx.jobs.setStage(job.id, "simplifying", ctx.clock.nowIso());
@@ -79,14 +79,14 @@ export function synthesizeRouter(ctx: AppContext): Router {
       });
 
       // Translations from an earlier synthesis that were not regenerated now describe a stale summary: delete them, with receipts.
-      const pk = pkFor(linkIdHash);
+      const uid = uidFor(linkIdHash);
       let staleDeleted = 0;
-      for (const sk of await ctx.secureDocs.listKeys(linkIdHash)) {
-        if (!sk.startsWith(SK.translationPrefix)) continue;
-        if (result.meta.languages.includes(sk.slice(SK.translationPrefix.length))) continue;
-        await ctx.docStore.delete(pk, sk);
+      for (const doc of await ctx.secureDocs.listDocs(linkIdHash)) {
+        if (!doc.startsWith(DOC.translationPrefix)) continue;
+        if (result.meta.languages.includes(doc.slice(DOC.translationPrefix.length))) continue;
+        await ctx.docStore.delete(uid, doc);
         staleDeleted += 1;
-        await ctx.audit.append({ event: "record.deleted", linkIdHash, actor: "provider", at: ctx.clock.nowIso(), details: { store: ctx.docStore.name, table: ctx.docStore.tableName, sk, reason: "resynthesized", job: "synthesize", jobId: job.id, receipt: true } });
+        await ctx.audit.append({ event: "record.deleted", linkIdHash, actor: "provider", at: ctx.clock.nowIso(), details: { store: ctx.docStore.name, table: ctx.docStore.tableName, uid, doc, reason: "resynthesized", job: "synthesize", jobId: job.id, receipt: true } });
       }
 
       const synthesisCount = (previous?.synthesisCount ?? (previous ? 1 : 0)) + 1;
