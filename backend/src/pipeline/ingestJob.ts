@@ -58,26 +58,47 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
     const key = link.encKey;
     const expiresAtEpoch = epochSeconds(link.expiresAt);
 
-    // 1. Get the clinician text: from memory, or from the stored raw document (restart path).
+    // 1. Get the clinician text: from memory, from the stored raw document, or (audio) from the
+    //    stored clip (restart paths).
     let raw: RawDocument | null = await secureDocs.getJson<RawDocument>({ linkIdHash: job.linkIdHash, sk: SK.raw, key }).catch(() => null);
     if (!raw) {
-      if (!pending) throw new Error("restart_before_extraction: the input was lost when the process restarted");
       let text: string;
-      if (pending.kind === "text") {
+      let kind: RawDocument["kind"];
+      if (pending?.kind === "text") {
+        kind = "text";
         text = normalizeText(pending.text ?? "");
-      } else if (pending.kind === "pdf") {
+      } else if (pending?.kind === "pdf") {
+        kind = "pdf";
         await setStage("extracting");
         const r = await extractPdfText(pending.file!.buffer);
         await jobs.mergeMeta(jobId, { pdfPages: r.pages, pdfEngine: r.engine }, clock.nowIso());
         text = r.text;
-      } else {
+      } else if (pending?.kind === "audio" || job.inputKind === "audio") {
+        kind = "audio";
+        // The clip is persisted first (sealed with the link key, expiresAt = the link's), so a
+        // restart resumes from the store and the diagram's "stores audio" box is real.
+        let clip: { buffer: Buffer; mimeType: string; fileName?: string };
+        if (pending?.file) {
+          clip = pending.file;
+          const stored = await ctx.secureAudio.put({ linkIdHash: job.linkIdHash, key, keyVersion: link.keyVersion, body: clip.buffer, contentType: clip.mimeType, expiresAt: expiresAtEpoch, createdAt: clock.nowIso() });
+          await audit.append({ event: "audio.stored", linkIdHash: job.linkIdHash, actor: "system", at: clock.nowIso(), details: { store: ctx.audioStore.name, location: ctx.audioStore.location, key: stored.key, bytes: stored.bytes, contentType: stored.contentType, expiresAt: stored.expiresAt, sealed: true } });
+          await jobs.mergeMeta(jobId, { audioStore: ctx.audioStore.name, audioKey: stored.key, audioBytes: stored.bytes }, clock.nowIso());
+        } else {
+          const stored = await ctx.secureAudio.get({ linkIdHash: job.linkIdHash, key });
+          if (!stored) throw new Error("restart_before_extraction: the input was lost when the process restarted");
+          clip = { buffer: stored.body, mimeType: stored.meta.contentType };
+        }
         await setStage("transcribing");
-        const r = await ctx.pipeline.stages.transcribe.run({ audio: pending.file!.buffer, mimeType: pending.file!.mimeType, fileName: pending.file!.fileName });
+        const r = await ctx.pipeline.stages.transcribe.run({ audio: clip.buffer, mimeType: clip.mimeType, fileName: clip.fileName });
         await jobs.mergeMeta(jobId, { transcribeProvider: r.provider, transcribeJobName: r.jobName, transcribeMs: r.latencyMs }, clock.nowIso());
         text = normalizeText(r.text);
+      } else {
+        throw new Error("restart_before_extraction: the input was lost when the process restarted");
       }
       if (!text) throw new Error("empty_input_after_extraction");
-      raw = { text, kind: pending.kind, linkId: pending.linkId };
+      const linkId = pending?.linkId ?? (await patients.getById(link.patientId))?.activeLinkId ?? "";
+      if (!linkId) throw new Error("restart_before_extraction: the link id is not recoverable");
+      raw = { text, kind, linkId };
       await secureDocs.putJson({ linkIdHash: job.linkIdHash, sk: SK.raw, key, keyVersion: link.keyVersion, value: raw, expiresAtEpochSeconds: expiresAtEpoch, createdAt: clock.nowIso() });
     }
     const { text, linkId } = raw;

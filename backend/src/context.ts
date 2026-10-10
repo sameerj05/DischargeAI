@@ -1,4 +1,5 @@
 import { createPipeline, type Pipeline } from "./agents/pipeline.js";
+import { createAudioStore, SecureAudio, type AudioStore } from "./audiostore/index.js";
 import { createSimplifier, type SimplifierAgent } from "./agents/simplifier.js";
 import { createTranscriber, type TranscriberAgent } from "./agents/transcriber.js";
 import { createTranslator, type TranslatorAgent } from "./agents/translator.js";
@@ -34,6 +35,8 @@ export interface AppContext {
   checklist: ChecklistRepo;
   docStore: DocumentStore;
   secureDocs: SecureDocs;
+  audioStore: AudioStore;
+  secureAudio: SecureAudio;
   simplifier: SimplifierAgent;
   translator: TranslatorAgent;
   transcriber: TranscriberAgent;
@@ -58,6 +61,7 @@ export interface CreateContextOptions {
   translator?: TranslatorAgent;
   transcriber?: TranscriberAgent;
   pipeline?: Pipeline;
+  audioStore?: AudioStore;
   mailer?: Mailer;
   seed?: boolean;
 }
@@ -77,6 +81,8 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
   const checklist = new ChecklistRepo(db);
   const docStore = createDocumentStore(config, db);
   const secureDocs = new SecureDocs(docStore);
+  const audioStore = opts.audioStore ?? createAudioStore(config);
+  const secureAudio = new SecureAudio(audioStore);
 
   if (opts.seed !== false) {
     const added = await seedPatients(patients, audit, () => clock.nowIso());
@@ -107,6 +113,8 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
     checklist,
     docStore,
     secureDocs,
+    audioStore,
+    secureAudio,
     simplifier,
     translator,
     transcriber,

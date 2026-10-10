@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import request from "supertest";
 import { buildApp } from "../src/app.js";
@@ -34,14 +34,18 @@ export interface TestApp {
   ctx: AppContext;
   app: ReturnType<typeof buildApp>;
   mailer: ReturnType<typeof recordingMailer>;
+  /** Per-test local audio store directory (under backend/data, gitignored), removed on close. */
+  audioDir: string;
   provider: (req: request.Test) => request.Test;
   close: () => Promise<void>;
 }
 
 export async function createTestApp(opts: CreateContextOptions = {}): Promise<TestApp> {
   const mailer = recordingMailer();
+  mkdirSync(join(import.meta.dirname, "..", "data"), { recursive: true });
+  const audioDir = mkdtempSync(join(import.meta.dirname, "..", "data", "test-audio-"));
   const ctx = await createContext({
-    env: { ...process.env, DATABASE_FILE: ":memory:", DATABASE_URL: "", LOG_LEVEL: "silent", PURGE_INTERVAL_MS: "0", DEMO_MODE: "true", PROVIDER_API_KEY: PROVIDER_KEY, LLM_PROVIDER: "offline", TRANSCRIBE_PROVIDER: "offline", DOC_STORE: "local", EMAIL_QUEUE: "none" },
+    env: { ...process.env, DATABASE_FILE: ":memory:", DATABASE_URL: "", LOG_LEVEL: "silent", PURGE_INTERVAL_MS: "0", DEMO_MODE: "true", PROVIDER_API_KEY: PROVIDER_KEY, LLM_PROVIDER: "offline", TRANSCRIBE_PROVIDER: "offline", DOC_STORE: "local", EMAIL_QUEUE: "none", AUDIO_STORE: "local", AUDIO_DIR: audioDir },
     mailer,
     ...opts,
   });
@@ -50,8 +54,12 @@ export async function createTestApp(opts: CreateContextOptions = {}): Promise<Te
     ctx,
     app,
     mailer,
+    audioDir,
     provider: (req) => req.set("x-provider-key", PROVIDER_KEY),
-    close: () => ctx.close(),
+    close: async () => {
+      await ctx.close();
+      rmSync(audioDir, { recursive: true, force: true });
+    },
   };
 }
 

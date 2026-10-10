@@ -55,6 +55,11 @@ export const ConfigSchema = z.object({
   TRANSCRIBE_BUCKET: optionalString,
   TRANSCRIBE_OUTPUT_BUCKET: optionalString,
 
+  /** Where dictated audio is kept (sealed with the link key): local directory or the S3 audio bucket. */
+  AUDIO_STORE: z.enum(["local", "s3"]).default("local"),
+  AUDIO_BUCKET: optionalString,
+  AUDIO_DIR: z.string().default("data/audio"),
+
   EMAIL_TRANSPORT: z.enum(["console", "smtp", "ses"]).default("console"),
   EMAIL_FROM: z.string().default("DischargeAI <noreply@example.test>"),
   SMTP_URL: optionalString,

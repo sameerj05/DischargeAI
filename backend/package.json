@@ -18,6 +18,7 @@
     "demo": "sh scripts/demo.sh",
     "seed": "tsx scripts/seed.ts",
     "create-table": "tsx scripts/create-dynamo-table.ts",
+    "put-s3-lifecycle": "tsx scripts/put-s3-lifecycle.ts",
     "email-worker": "tsx scripts/email-worker.ts",
     "live-ingest": "tsx scripts/live-ingest.ts",
     "make-fixture-pdf": "tsx scripts/make-fixture-pdf.ts"

@@ -1,9 +1,14 @@
 import { Router } from "express";
 import type { AppContext } from "../context.js";
 import { hashLinkId, isLinkIdShaped } from "../crypto/linkId.js";
+import { DELETION_RECEIPT_EVENTS } from "../db/repos/audit.js";
 import { badRequest } from "../errors.js";
 
-/** GET /audit?link=<linkId> (provider): the event trail for a link. Never contains PHI. */
+/**
+ * GET /audit?link=<linkId> (provider): the event trail for a link, with its deletion receipts
+ * (key destroyed, each discharge_records item deleted, the audio object deleted) pulled out so the
+ * day-30 proof is one field. GET /audit/receipts (provider): every receipt in the log. Never PHI.
+ */
 export function auditRouter(ctx: AppContext): Router {
   const r = Router();
   r.get("/audit", async (req, res) => {
@@ -15,10 +20,15 @@ export function auditRouter(ctx: AppContext): Router {
     res.json({
       linkIdHash,
       link: record
-        ? { status: record.status, createdAt: record.createdAt, expiresAt: record.expiresAt, keyDestroyed: record.encKey === null, lastViewedAt: record.lastViewedAt }
+        ? { status: record.status, createdAt: record.createdAt, expiresAt: record.expiresAt, keyDestroyed: record.encKey === null, lastViewedAt: record.lastViewedAt, languages: record.languages }
         : null,
       events,
+      deletionReceipts: events.filter((e) => DELETION_RECEIPT_EVENTS.has(e.event)),
     });
+  });
+  r.get("/audit/receipts", async (_req, res) => {
+    const receipts = await ctx.audit.listDeletionReceipts();
+    res.json({ count: receipts.length, receipts });
   });
   return r;
 }

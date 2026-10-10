@@ -15,8 +15,19 @@ export type AuditEvent =
   | "link.expired"
   | "link.purged"
   | "key.destroyed"
+  | "record.deleted"
+  | "audio.stored"
+  | "audio.deleted"
+  | "record.synthesized"
+  | "synthesize.run"
   | "clock.advanced"
   | "purge.run";
+
+/**
+ * Deletion receipts: one audit row per thing destroyed at day 30 (a DynamoDB item, an audio object,
+ * a data key), each naming what was deleted, where, when and by which job. Never PHI.
+ */
+export const DELETION_RECEIPT_EVENTS: ReadonlySet<AuditEvent> = new Set<AuditEvent>(["key.destroyed", "record.deleted", "audio.deleted"]);
 
 export interface AuditRow {
   id: number;
@@ -72,13 +83,26 @@ export class AuditRepo {
       "SELECT * FROM audit_log WHERE link_id_hash = ? ORDER BY id",
       [linkIdHash],
     );
-    return rows.map((r) => ({
-      id: Number(r.id),
-      event: r.event,
-      linkIdHash: r.link_id_hash,
-      actor: r.actor,
-      at: r.at,
-      details: JSON.parse(r.details) as Record<string, unknown>,
-    }));
+    return rows.map(toEntry);
   }
+
+  /** Every deletion receipt in the log (all links), newest last. */
+  async listDeletionReceipts(limit = 500): Promise<AuditEntry[]> {
+    const rows = await this.db.all<AuditRow>(
+      "SELECT * FROM audit_log WHERE event IN ('key.destroyed', 'record.deleted', 'audio.deleted') ORDER BY id DESC LIMIT ?",
+      [limit],
+    );
+    return rows.map(toEntry).reverse();
+  }
+}
+
+function toEntry(r: AuditRow): AuditEntry {
+  return {
+    id: Number(r.id),
+    event: r.event,
+    linkIdHash: r.link_id_hash,
+    actor: r.actor,
+    at: r.at,
+    details: JSON.parse(r.details) as Record<string, unknown>,
+  };
 }

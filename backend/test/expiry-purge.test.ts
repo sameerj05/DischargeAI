@@ -49,6 +49,9 @@ describe("30-day expiry and purge", () => {
     expect(res.status).toBe(200);
     expect(res.body.linksPurged).toBe(1);
     expect(res.body.documentsDeleted).toBe(3);
+    expect(res.body.keysDestroyed).toBe(1);
+    expect(res.body.audioDeleted).toBe(0);
+    expect(res.body.receipts.map((r: { event: string }) => r.event)).toEqual(["key.destroyed", "record.deleted", "record.deleted", "record.deleted"]);
 
     const after = await t.ctx.links.getByHash(hash);
     expect(after?.status).toBe("purged");
@@ -72,6 +75,12 @@ describe("30-day expiry and purge", () => {
     expect(events).toContain("key.destroyed");
     expect(events).toContain("link.purged");
     expect(audit.body.link.keyDestroyed).toBe(true);
+    // Deletion receipts: the key, then one per discharge_records item, each naming what and by which job.
+    const receipts = audit.body.deletionReceipts as { event: string; details: Record<string, unknown> }[];
+    expect(receipts.map((r) => r.event)).toEqual(["key.destroyed", "record.deleted", "record.deleted", "record.deleted"]);
+    expect(receipts.slice(1).map((r) => r.details.sk)).toEqual(["raw", "simplified", "translation#es"]);
+    expect(receipts.slice(1).every((r) => r.details.table === "discharge_records" && r.details.job === "purge" && r.details.receipt === true)).toBe(true);
+    expect(receipts[0].details).toMatchObject({ keyVersion: 1, job: "purge", reason: "expired" });
   });
 
   it("purge is idempotent and leaves unexpired links alone", async () => {
