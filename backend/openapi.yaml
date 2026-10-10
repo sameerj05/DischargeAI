@@ -530,12 +530,13 @@ paths:
                 caregiverApproved: { type: boolean, description: Caregiver gets the link only when true (the advisors' consent step) }
       responses:
         "202":
-          description: Accepted; pipeline runs asynchronously
+          description: Accepted ("ingestion started"); the pipeline runs asynchronously
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  message: { type: string, enum: ["ingestion started"], description: The human-readable status from the API note }
                   jobId: { type: string }
                   linkId: { type: string, description: The raw link id; appears only here, in the email and on the patient row }
                   link: { type: string, description: "${PATIENT_APP_URL}/s/${linkId}" }

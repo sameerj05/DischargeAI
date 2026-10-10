@@ -5,7 +5,7 @@
   "description": "DischargeAI backend: discharge summaries in, plain-language patient links out, data self-destructs at 30 days.",
   "type": "module",
   "engines": {
-    "node": ">=22.3"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

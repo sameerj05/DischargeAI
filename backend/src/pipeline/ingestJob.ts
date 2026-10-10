@@ -61,6 +61,10 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
     // 1. Get the clinician text: from memory, from the stored raw document, or (audio) from the
     //    stored clip (restart paths).
     let raw: RawDocument | null = await secureDocs.getJson<RawDocument>({ linkIdHash: job.linkIdHash, doc: DOC.raw, key }).catch(() => null);
+    // The transcribe stage runs here, before the clip's transcript is persisted as the raw document, so
+    // the pipeline below starts at simplify; its name is prepended to the stages list so provenance
+    // on GET /jobs/:id and GET /p/:token reports all four stages for a dictated clip.
+    let transcribeStage: string | undefined = raw?.kind === "audio" && typeof job.meta.transcribeProvider === "string" ? `transcribe:${job.meta.transcribeProvider}` : undefined;
     if (!raw) {
       let text: string;
       let kind: RawDocument["kind"];
@@ -91,6 +95,7 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
         await setStage("transcribing");
         const r = await ctx.pipeline.stages.transcribe.run({ audio: clip.buffer, mimeType: clip.mimeType, fileName: clip.fileName });
         await jobs.mergeMeta(jobId, { transcribeProvider: r.provider, transcribeJobName: r.jobName, transcribeMs: r.latencyMs }, clock.nowIso());
+        transcribeStage = ctx.pipeline.stages.transcribe.name;
         text = normalizeText(r.text);
       } else {
         throw new Error("restart_before_extraction: the input was lost when the process restarted");
@@ -110,6 +115,11 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
       preferredLanguage: link.language ?? undefined,
       onStage: (stage, detail) => setStage(stage, undefined, detail),
     });
+    if (raw.kind === "audio") {
+      result.meta.inputKind = "audio";
+      if (transcribeStage) result.meta.stages = [transcribeStage, ...result.meta.stages];
+      result.meta.transcribe ??= { provider: String(job.meta.transcribeProvider ?? transcribeStage?.split(":")[1] ?? "unknown"), jobName: job.meta.transcribeJobName as string | undefined, latencyMs: job.meta.transcribeMs as number | undefined };
+    }
     await jobs.mergeMeta(jobId, { provider: result.meta.provider, model: result.meta.model, usage: result.meta.usage, llmMs: result.meta.latencyMs, fixture: result.meta.fixture, sourceChars: text.length, stages: result.meta.stages, languages: result.meta.languages, fidelity: result.meta.safetyChecks.fidelity }, clock.nowIso());
     await jobs.setWarnings(jobId, result.meta.safetyChecks.warnings, clock.nowIso());
 

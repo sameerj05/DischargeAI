@@ -4,20 +4,20 @@ import { loadSimplifiedFixture } from "../src/agents/offline/fixtures.js";
 import { OfflineSimplifier } from "../src/agents/offline/simplifier.js";
 import { OfflineTranscriber } from "../src/agents/offline/transcriber.js";
 import { OfflineTranslator } from "../src/agents/offline/translator.js";
-import { createPipeline, resolveLanguages, type SimplifyStage } from "../src/agents/pipeline.js";
+import { createPipeline, resolveLanguages, type SimplifyStage, type TranslateStage } from "../src/agents/pipeline.js";
 import { exampleText } from "./helpers.js";
 
 const pipeline = () => createPipeline({ transcriber: new OfflineTranscriber(), simplifier: new OfflineSimplifier(), translator: new OfflineTranslator() });
 
 describe("lane-3 pipeline: transcribe -> simplify -> safety check -> translate", () => {
   it("returns one contract object per language (en always), validated, medications verbatim everywhere", async () => {
-    const stages: string[] = [];
-    const r = await pipeline().run({ rawText: exampleText("example-1-chf"), languages: ["es", "Mandarin", "ar", "es", "klingon"], onStage: (s) => void stages.push(s) });
+    const stages: [string, Record<string, unknown> | undefined][] = [];
+    const r = await pipeline().run({ rawText: exampleText("example-1-chf"), languages: ["es", "Mandarin", "ar", "es", "klingon"], onStage: (s, d) => void stages.push([s, d]) });
     expect(Object.keys(r.perLanguage)).toEqual(["en", "es", "zh", "ar"]);
     expect(r.meta.unsupportedLanguages).toEqual(["klingon"]);
     expect(r.meta.safetyChecks).toMatchObject({ fidelity: "passed", patientNoticeAdded: false, warnings: [] });
     expect(r.meta.stages).toEqual(["simplify:offline", "safetyCheck:deterministic", "translate:offline"]);
-    expect(stages).toEqual(["simplifying", "checking", "translating", "translating", "translating"]);
+    expect(stages).toEqual([["simplifying", undefined], ["checking", undefined], ["translating", { languages: ["es", "zh", "ar"] }]]);
     expect(r.meta.inputKind).toBe("text");
     const enMeds = r.perLanguage.en.medications.map((m) => `${m.status}|${m.name}|${m.dose}`);
     for (const [lang, out] of Object.entries(r.perLanguage)) {
@@ -31,6 +31,35 @@ describe("lane-3 pipeline: transcribe -> simplify -> safety check -> translate",
     expect(r.perLanguage.es.summary).not.toBe(r.perLanguage.en.summary);
     expect(r.meta.translations.es.backTranslationCheck).toBe("passed");
     expect(r.summaries.en).toEqual(loadSimplifiedFixture("example-1"));
+  });
+
+  it("translates the picked languages concurrently (one call per language, wall time of the slowest, results in picked order)", async () => {
+    const inner = new OfflineTranslator();
+    let inFlight = 0;
+    let peak = 0;
+    const order: string[] = [];
+    const translate: TranslateStage = {
+      name: "translate:concurrent-probe",
+      async run(input) {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        // ar finishes first, es last: the output order must still follow the picked order.
+        await new Promise((resolve) => setTimeout(resolve, input.language.code === "es" ? 60 : input.language.code === "zh" ? 30 : 5));
+        order.push(input.language.code);
+        inFlight -= 1;
+        const r = await inner.translate({ summary: input.summary, language: input.language.code, languageName: input.language.name });
+        return { translation: { ...r.translation, readingLevel: "grade5", language: input.language.code }, backTranslation: r.backTranslation, warnings: [], provider: r.provider };
+      },
+    };
+    const p = createPipeline({ transcriber: new OfflineTranscriber(), simplifier: new OfflineSimplifier(), translator: inner, stages: { translate } });
+    const t0 = Date.now();
+    const r = await p.run({ rawText: exampleText("example-1-chf"), languages: ["es", "zh", "ar"] });
+    expect(peak).toBe(3);
+    expect(order).toEqual(["ar", "zh", "es"]);
+    expect(Object.keys(r.perLanguage)).toEqual(["en", "es", "zh", "ar"]);
+    expect(Object.keys(r.meta.translations)).toEqual(["es", "zh", "ar"]);
+    expect(r.meta.stages).toEqual(["simplify:offline", "safetyCheck:deterministic", "translate:concurrent-probe"]);
+    expect(Date.now() - t0).toBeLessThan(60 + 30 + 5 + 400);
   });
 
   it("runs the transcribe stage for audio input", async () => {

@@ -14,7 +14,7 @@ import type { LlmUsage, SimplifiedSummary, Warning } from "./types.js";
  * Lane 3 of the team architecture diagram, as one module Person C owns:
  *
  *   audio --(1 transcribe)--> transcript --(2 simplify)--> draft --(3 safetyCheck)--> verified steps
- *         --(4 translate, per language)--> JSON per language
+ *         --(4 translate, every picked language at once)--> JSON per language
  *
  * `runPipeline({ rawText | audio, languages })` returns `{ perLanguage, meta }` where every
  * `perLanguage[lang]` is the fixed contract object (src/agents/aiOutput.ts, contracts/) and `meta`
@@ -218,13 +218,22 @@ export function composePipeline(stages: PipelineStages, log?: Logger): Pipeline 
       ran.push(stages.safetyCheck.name);
       const en = check.verified;
 
+      // Every picked language is translated from the same verified English, so the translations are
+      // independent and run concurrently: one model call per language, wall time of the slowest one
+      // instead of the sum. Results are written back in the order the languages were picked.
       const { languages, unsupported } = resolveLanguages(input.languages);
       const summaries: Record<string, SimplifiedSummary> = { en };
       const backTranslations: Record<string, SimplifiedSummary | undefined> = {};
       const translations: PipelineMeta["translations"] = {};
-      for (const language of languages) {
-        await input.onStage?.("translating", { language: language.code });
-        const r = await stages.translate.run({ summary: en, language });
+      if (languages.length) await input.onStage?.("translating", { languages: languages.map((l) => l.code) });
+      const translated = await Promise.all(
+        languages.map(async (language) => {
+          const r = await stages.translate.run({ summary: en, language });
+          log?.info({ language: language.code, provider: r.provider, warnings: r.warnings.length, latencyMs: r.latencyMs }, "pipeline translated");
+          return { language, r };
+        }),
+      );
+      for (const { language, r } of translated) {
         summaries[language.code] = r.translation;
         backTranslations[language.code] = r.backTranslation;
         translations[language.code] = {
@@ -237,7 +246,6 @@ export function composePipeline(stages: PipelineStages, log?: Logger): Pipeline 
           usage: r.usage,
           latencyMs: r.latencyMs,
         };
-        log?.info({ language: language.code, provider: r.provider, warnings: r.warnings.length }, "pipeline translated");
       }
       if (languages.length) ran.push(stages.translate.name);
 

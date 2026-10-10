@@ -58,8 +58,13 @@ describe("ingest PDF", () => {
     expect(job.body.stage).toBe("done");
     expect(job.body.inputKind).toBe("audio");
     expect(job.body.meta.transcribeProvider).toBe("offline");
+    // Provenance reports all four lane-3 stages for a dictated clip, transcribe first.
+    expect(job.body.meta.stages).toEqual(["transcribe:offline", "simplify:offline", "safetyCheck:deterministic", "translate:offline"]);
     const summary = await request(t.app).get(`/summary?link=${res.body.linkId}`);
     expect(summary.status).toBe(200);
     expect(summary.body.medications.new.map((m: { name: string }) => m.name)).toContain("Furosemide");
+    const view = await request(t.app).get(`/p/${res.body.linkId}`);
+    expect(view.status).toBe(200);
+    expect(view.body.meta.provenance).toMatchObject({ inputKind: "audio", stages: ["transcribe:offline", "simplify:offline", "safetyCheck:deterministic", "translate:offline"] });
   });
 });

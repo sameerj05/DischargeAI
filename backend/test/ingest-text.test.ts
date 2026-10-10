@@ -27,6 +27,7 @@ describe("ingest text -> job -> summary", () => {
     const patientId = list.patients[0].id;
     const res = await t.provider(request(t.app).post("/ingest")).field("patientId", patientId).field("text", exampleText("example-1-chf"));
     expect(res.status).toBe(202);
+    expect(res.body.message).toBe("ingestion started");
     expect(res.body.linkId).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(res.body.link).toBe(`http://localhost:5173/s/${res.body.linkId}`);
     expect(res.body.statusUrl).toBe(`/jobs/${res.body.jobId}`);

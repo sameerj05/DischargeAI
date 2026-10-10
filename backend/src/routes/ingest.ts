@@ -89,6 +89,7 @@ export function ingestRouter(ctx: AppContext): Router {
     ctx.log.info({ jobId: job.id, link: hashPrefix(linkIdHash), inputKind: kind }, "ingest accepted");
 
     res.status(202).json({
+      message: "ingestion started",
       jobId: job.id,
       linkId,
       link: ctx.patientUrl(linkId),
