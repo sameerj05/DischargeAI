@@ -7,13 +7,21 @@ import { hashLinkId, hashPrefix, newLinkId } from "../crypto/linkId.js";
 import { badRequest, notFound } from "../errors.js";
 import { isEmptyText } from "../extract/text.js";
 import { looksLikePdf } from "../extract/pdf.js";
+import { resolveLanguages } from "../agents/pipeline.js";
 import { resolveLanguage } from "../languages.js";
 import { uploadMiddleware, type UploadedFiles } from "../middleware/upload.js";
+import { synthesisLanguages } from "../pipeline/ingestJob.js";
 
 const IngestFields = z.object({
   patientId: z.string().trim().min(1),
   text: z.string().optional(),
+  /** Patient's preferred language (name or code); translated at synthesis unless it is English. */
   language: z.string().trim().optional(),
+  /** More languages to translate at synthesis: repeat the field or comma-separate (es,zh,ar). */
+  languages: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((v) => (v === undefined ? [] : (Array.isArray(v) ? v : [v]).flatMap((s) => s.split(",")).map((s) => s.trim()).filter(Boolean))),
   caregiverEmail: z.string().trim().email().optional().or(z.literal("")),
   caregiverApproved: z
     .union([z.boolean(), z.string()])
@@ -47,7 +55,11 @@ export function ingestRouter(ctx: AppContext): Router {
     const patient = await ctx.patients.getById(fields.patientId);
     if (!patient) throw notFound("patient_not_found", "Unknown patientId");
 
-    const language = fields.language ? (resolveLanguage(fields.language)?.code ?? fields.language) : patient.preferredLanguage ?? undefined;
+    if (fields.language && !resolveLanguage(fields.language)) throw badRequest("unsupported_language", `language "${fields.language}" is not in GET /languages`);
+    const { languages: picked, unsupported } = resolveLanguages(fields.languages);
+    if (unsupported.length) throw badRequest("unsupported_language", `Unsupported language(s): ${unsupported.join(", ")} (see GET /languages)`);
+    const language = fields.language ? resolveLanguage(fields.language)!.code : patient.preferredLanguage ?? undefined;
+    const languages = picked.map((l) => l.code);
     const linkId = newLinkId();
     const linkIdHash = hashLinkId(linkId);
     const createdAt = ctx.clock.now();
@@ -62,6 +74,7 @@ export function ingestRouter(ctx: AppContext): Router {
       keyVersion: ctx.config.KEY_VERSION,
       encKey: newDataKey(),
       language: language ?? null,
+      languages,
       caregiverEmail: fields.caregiverEmail || null,
       caregiverApproved: !!fields.caregiverEmail && fields.caregiverApproved,
     });
@@ -71,7 +84,8 @@ export function ingestRouter(ctx: AppContext): Router {
       now: ctx.clock.nowIso(),
       meta: { inputBytes: pdf?.size ?? audio?.size ?? Buffer.byteLength(text, "utf8"), mimeType: pdf?.mimetype ?? audio?.mimetype },
     });
-    await ctx.audit.append({ event: "link.created", linkIdHash, actor: "provider", at: ctx.clock.nowIso(), details: { patientId: patient.id, jobId: job.id, inputKind: kind, expiresAt: expiresAt.toISOString(), caregiver: !!fields.caregiverEmail, caregiverApproved: !!fields.caregiverEmail && fields.caregiverApproved } });
+    const synthesis = synthesisLanguages({ language: language ?? null, languages });
+    await ctx.audit.append({ event: "link.created", linkIdHash, actor: "provider", at: ctx.clock.nowIso(), details: { patientId: patient.id, jobId: job.id, inputKind: kind, expiresAt: expiresAt.toISOString(), language: language ?? null, synthesisLanguages: synthesis, caregiver: !!fields.caregiverEmail, caregiverApproved: !!fields.caregiverEmail && fields.caregiverApproved } });
     ctx.log.info({ jobId: job.id, link: hashPrefix(linkIdHash), inputKind: kind }, "ingest accepted");
 
     res.status(202).json({
@@ -80,7 +94,10 @@ export function ingestRouter(ctx: AppContext): Router {
       link: ctx.patientUrl(linkId),
       expiresAt: expiresAt.toISOString(),
       statusUrl: `/jobs/${job.id}`,
+      patientUrl: `/p/${linkId}`,
       stage: job.stage,
+      language: language ?? null,
+      synthesisLanguages: synthesis,
     });
 
     ctx.enqueueIngest(job.id, {

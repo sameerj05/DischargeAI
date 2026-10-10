@@ -15,8 +15,10 @@ import { contractsRouter } from "./routes/contracts.js";
 import { healthRouter } from "./routes/health.js";
 import { ingestRouter } from "./routes/ingest.js";
 import { jobsRouter } from "./routes/jobs.js";
+import { patientLinkRouter } from "./routes/patientLink.js";
 import { patientsRouter } from "./routes/patients.js";
 import { summaryRouter } from "./routes/summary.js";
+import { synthesizeRouter } from "./routes/synthesize.js";
 import { translateRouter } from "./routes/translate.js";
 
 export const OPENAPI_FILE = join(import.meta.dirname, "..", "openapi.yaml");
@@ -58,16 +60,18 @@ export function buildApp(ctx: AppContext): Express {
     app.use("/docs", swaggerUi.serve, swaggerUi.setup(doc));
   }
 
-  // Provider endpoints: x-provider-key on these prefixes only.
-  app.use(["/patients", "/ingest", "/jobs", "/audit", "/admin"], providerAuth(ctx.config.PROVIDER_API_KEY));
+  // Provider endpoints ("light provider auth" in the diagram): x-provider-key on these prefixes only.
+  app.use(["/patients", "/ingest", "/synthesize", "/jobs", "/audit", "/admin"], providerAuth(ctx.config.PROVIDER_API_KEY));
   app.use(patientsRouter(ctx));
   app.use(ingestRouter(ctx));
+  app.use(synthesizeRouter(ctx));
   app.use(jobsRouter(ctx));
   app.use(auditRouter(ctx));
   if (ctx.config.DEMO_MODE) app.use(adminRouter(ctx));
 
-  // Patient endpoints: authenticated by the unguessable link id, lightly rate limited.
-  app.use(["/summary", "/translate", "/languages", "/checklist"], rateLimit({ capacity: 120, refillPerSecond: 2 }));
+  // Patient endpoints: authenticated by the unguessable link id (token), lightly rate limited.
+  app.use(["/p", "/summary", "/translate", "/languages", "/checklist"], rateLimit({ capacity: 120, refillPerSecond: 2 }));
+  app.use(patientLinkRouter(ctx));
   app.use(summaryRouter(ctx));
   app.use(translateRouter(ctx));
   app.use(checklistRouter(ctx));

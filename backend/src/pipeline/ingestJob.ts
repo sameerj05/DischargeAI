@@ -143,9 +143,17 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
   }
 }
 
-/** Languages translated at synthesis so the toggle is instant: the ones picked on the link (besides en). */
-export function synthesisLanguages(link: Pick<LinkRecord, "language">): string[] {
-  return link.language && link.language !== "en" ? [link.language] : [];
+/**
+ * Languages translated at synthesis so the toggle is instant for them: the patient's preferred
+ * language plus every language the provider picked at ingest (besides en). Any other language is
+ * translated lazily on first request.
+ */
+export function synthesisLanguages(link: Pick<LinkRecord, "language" | "languages">): string[] {
+  const out: string[] = [];
+  for (const code of [link.language ?? "", ...link.languages]) {
+    if (code && code !== "en" && !out.includes(code)) out.push(code);
+  }
+  return out;
 }
 
 /**

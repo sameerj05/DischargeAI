@@ -21,7 +21,7 @@ export interface LinkAccess {
  * shred its key on its next run.
  */
 export async function resolveLink(ctx: AppContext, linkParam: unknown): Promise<LinkAccess> {
-  if (!isLinkIdShaped(linkParam)) throw badRequest("invalid_link", "link must be the 22-character id from your email");
+  if (!isLinkIdShaped(linkParam)) throw badRequest("invalid_link", "link must be the 22-character token from your email");
   const linkIdHash = hashLinkId(linkParam);
   const link = await ctx.links.getByHash(linkIdHash);
   if (!link) throw notFound("link_not_found", "No discharge summary exists for this link");

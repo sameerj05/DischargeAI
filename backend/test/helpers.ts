@@ -64,13 +64,15 @@ export async function createTestApp(opts: CreateContextOptions = {}): Promise<Te
 }
 
 /** Ingests text for the first seeded patient and waits for the pipeline to finish. */
-export async function ingestText(t: TestApp, text: string, extra: Record<string, string> = {}) {
+export async function ingestText(t: TestApp, text: string, extra: Record<string, string | string[]> = {}, patientIndex = 0) {
   const { body: list } = await t.provider(request(t.app).get("/patients"));
-  const patientId: string = list.patients[0].id;
+  const patientId: string = list.patients[patientIndex].id;
   let req = t.provider(request(t.app).post("/ingest")).field("patientId", patientId).field("text", text);
-  for (const [k, v] of Object.entries(extra)) req = req.field(k, v);
+  for (const [k, v] of Object.entries(extra)) {
+    for (const one of Array.isArray(v) ? v : [v]) req = req.field(k, one);
+  }
   const res = await req;
   if (res.status !== 202) throw new Error(`ingest failed: ${res.status} ${JSON.stringify(res.body)}`);
   await t.ctx.queue.onIdle();
-  return { patientId, ...(res.body as { jobId: string; linkId: string; link: string; expiresAt: string }) };
+  return { patientId, ...(res.body as { jobId: string; linkId: string; link: string; expiresAt: string; synthesisLanguages: string[] }) };
 }
