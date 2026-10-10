@@ -27,7 +27,7 @@ const language = process.argv[3] ?? "Spanish";
 const text = readFileSync(join(root, "fixtures", "discharge-summaries", `${example}.txt`), "utf8");
 
 const ctx = await createContext({
-  env: { ...process.env, DATABASE_FILE: ":memory:", DATABASE_URL: "", DOC_STORE: "local", EMAIL_TRANSPORT: "console", EMAIL_QUEUE: "none", DEMO_MODE: "true", PURGE_INTERVAL_MS: "0", LOG_LEVEL: process.env.LOG_LEVEL ?? "warn", PROVIDER_API_KEY: "live-run" },
+  env: { ...process.env, DATABASE_FILE: ":memory:", SQL_DRIVER: "sqlite", DOC_STORE: process.env.DOC_STORE ?? "local", EMAIL_TRANSPORT: "console", EMAIL_QUEUE: "none", DEMO_MODE: "true", PURGE_INTERVAL_MS: "0", LOG_LEVEL: process.env.LOG_LEVEL ?? "warn", PROVIDER_API_KEY: "live-run" },
 });
 const app = buildApp(ctx);
 const server = app.listen(0);

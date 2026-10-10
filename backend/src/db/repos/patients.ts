@@ -65,7 +65,7 @@ export class PatientsRepo {
       const rows = await this.db.all<PatientRow>(
         `SELECT * FROM patients
          WHERE LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ? OR LOWER(email) LIKE ? OR phone LIKE ?
-            OR LOWER(first_name || ' ' || last_name) LIKE ?
+            OR LOWER(CONCAT(first_name, ' ', last_name)) LIKE ?
          ORDER BY last_name, first_name`,
         [like, like, like, like, like],
       );

@@ -7,13 +7,14 @@
  */
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { loadConfig } from "../src/config.js";
+import { bootstrapSecrets } from "../src/config/secrets.js";
 import { loadDotEnv } from "../src/dotenv.js";
 import { createMailer, type Mailer } from "../src/email/mailer.js";
 import type { QueuedEmail } from "../src/email/queue.js";
 import { createLogger } from "../src/logger.js";
 
 loadDotEnv();
-const config = loadConfig();
+const config = loadConfig((await bootstrapSecrets(process.env)).env);
 const log = createLogger(config.LOG_LEVEL);
 let mailer: Mailer | undefined;
 

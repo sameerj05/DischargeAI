@@ -4,8 +4,8 @@ import { DynamoDocumentStore } from "./dynamo.js";
 import { LocalDocumentStore } from "./local.js";
 import type { DocumentStore } from "./types.js";
 
-export function createDocumentStore(config: Config, db: Db): DocumentStore {
-  if (config.DOC_STORE === "dynamo") {
+export function createDocumentStore(config: Config, db: Db, kind: "local" | "dynamo" = config.DOC_STORE === "dynamo" ? "dynamo" : "local"): DocumentStore {
+  if (kind === "dynamo") {
     return new DynamoDocumentStore({
       tableName: config.DYNAMO_TABLE,
       hashKey: config.DYNAMO_PK,

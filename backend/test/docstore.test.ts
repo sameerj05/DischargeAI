@@ -12,7 +12,7 @@ import { SecureDocs } from "../src/docstore/secure.js";
 import { DOC, uidFor, type DocumentStore } from "../src/docstore/types.js";
 import { createTestApp, exampleText, ingestText, type TestApp } from "./helpers.js";
 
-const MIGRATIONS = join(import.meta.dirname, "..", "src", "db", "migrations");
+const MIGRATIONS = join(import.meta.dirname, "..", "src", "db", "migrations", "sqlite");
 
 describe("discharge-summaries: the team's DynamoDB table and its SQL twin", () => {
   let t: TestApp;

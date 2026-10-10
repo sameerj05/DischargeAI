@@ -10,6 +10,20 @@ export function healthRouter(ctx: AppContext): Router {
       clock: { now: ctx.clock.nowIso(), offsetDays: ctx.clock.offsetDays },
       linkTtlDays: ctx.linkTtlDays,
       demoMode: ctx.config.DEMO_MODE,
+      config: {
+        source: ctx.boot.source,
+        secretLoaded: ctx.boot.loaded,
+        secretArn: ctx.boot.secretArn,
+        appliedFromSecret: ctx.boot.applied,
+        keptFromEnv: ctx.boot.kept,
+        reason: ctx.boot.reason,
+      },
+      sql: {
+        dialect: ctx.db.dialect,
+        requested: ctx.sql.requested,
+        target: ctx.sql.target,
+        fallback: ctx.sql.fallback ?? null,
+      },
       providers: {
         llm: ctx.simplifier.name,
         llmModel: ctx.config.LLM_PROVIDER === "bedrock" ? ctx.config.BEDROCK_MODEL_ID : ctx.config.LLM_PROVIDER === "anthropic" ? ctx.config.ANTHROPIC_MODEL : "fixtures+rules",

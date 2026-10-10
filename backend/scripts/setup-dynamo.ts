@@ -18,11 +18,14 @@ import {
   waitUntilTableExists,
 } from "@aws-sdk/client-dynamodb";
 import { loadConfig } from "../src/config.js";
+import { bootstrapSecrets } from "../src/config/secrets.js";
 import { createDynamoClient } from "../src/docstore/dynamo.js";
 import { loadDotEnv } from "../src/dotenv.js";
+import { createLogger } from "../src/logger.js";
 
 loadDotEnv();
-const config = loadConfig();
+const boot = await bootstrapSecrets(process.env, createLogger(process.env.LOG_LEVEL ?? "warn"));
+const config = loadConfig(boot.env);
 const TableName = config.DYNAMO_TABLE;
 const HashKey = config.DYNAMO_PK;
 const client = createDynamoClient({ region: config.AWS_REGION, endpoint: config.DYNAMO_ENDPOINT });
@@ -66,6 +69,7 @@ console.log(
     table: TableName,
     hashKey: HashKey,
     endpoint: config.DYNAMO_ENDPOINT ?? `aws:${config.AWS_REGION}`,
+    configSource: boot.source,
     created: !existed,
     ttlChanged,
     ttl: after.TimeToLiveDescription,

@@ -71,8 +71,8 @@ export class JobsRepo {
   async create(input: { linkIdHash: string; inputKind: InputKind; now: string; meta?: Record<string, unknown> }) {
     const id = randomUUID();
     await this.db.run(
-      `INSERT INTO jobs (id, link_id_hash, stage, input_kind, meta, created_at, updated_at)
-       VALUES (?, ?, 'received', ?, ?, ?, ?)`,
+      `INSERT INTO jobs (id, link_id_hash, stage, input_kind, warnings, meta, created_at, updated_at)
+       VALUES (?, ?, 'received', ?, '[]', ?, ?, ?)`,
       [id, input.linkIdHash, input.inputKind, JSON.stringify(input.meta ?? {}), input.now, input.now],
     );
     return (await this.get(id))!;

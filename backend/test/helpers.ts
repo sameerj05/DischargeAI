@@ -45,7 +45,7 @@ export async function createTestApp(opts: CreateContextOptions = {}): Promise<Te
   mkdirSync(join(import.meta.dirname, "..", "data"), { recursive: true });
   const audioDir = mkdtempSync(join(import.meta.dirname, "..", "data", "test-audio-"));
   const ctx = await createContext({
-    env: { ...process.env, DATABASE_FILE: ":memory:", DATABASE_URL: "", LOG_LEVEL: "silent", PURGE_INTERVAL_MS: "0", DEMO_MODE: "true", PROVIDER_API_KEY: PROVIDER_KEY, LLM_PROVIDER: "offline", TRANSCRIBE_PROVIDER: "offline", DOC_STORE: "local", EMAIL_QUEUE: "none", AUDIO_STORE: "local", AUDIO_DIR: audioDir },
+    env: { ...process.env, SECRETS_BOOTSTRAP: "off", SQL_DRIVER: "sqlite", DATABASE_FILE: ":memory:", DATABASE_URL: "", LOG_LEVEL: "silent", PURGE_INTERVAL_MS: "0", DEMO_MODE: "true", PROVIDER_API_KEY: PROVIDER_KEY, LLM_PROVIDER: "offline", TRANSCRIBE_PROVIDER: "offline", DOC_STORE: "local", EMAIL_QUEUE: "none", AUDIO_STORE: "local", AUDIO_DIR: audioDir },
     mailer,
     ...opts,
   });

@@ -4,9 +4,10 @@ import { createSimplifier, type SimplifierAgent } from "./agents/simplifier.js";
 import { createTranscriber, type TranscriberAgent } from "./agents/transcriber.js";
 import { createTranslator, type TranslatorAgent } from "./agents/translator.js";
 import { Clock } from "./clock.js";
-import { LINK_TTL_DAYS, loadConfig, type Config } from "./config.js";
+import { LINK_TTL_DAYS, loadConfig, resolveDocStore, type Config } from "./config.js";
+import { bootstrapSecrets, type SecretBootstrap, type SecretFetcher } from "./config/secrets.js";
 import { migrate } from "./db/migrate.js";
-import { openDb, type Db } from "./db/index.js";
+import { connectSql, type Db, type SqlConnection } from "./db/index.js";
 import { AuditRepo } from "./db/repos/audit.js";
 import { ChecklistRepo } from "./db/repos/checklist.js";
 import { JobsRepo } from "./db/repos/jobs.js";
@@ -25,6 +26,10 @@ import { JobQueue } from "./pipeline/queue.js";
 /** Everything a route or a job needs, wired once at boot. Tests build one per test file. */
 export interface AppContext {
   config: Config;
+  /** Where the infrastructure config came from (env, the team secret, both) and what was applied. */
+  boot: Omit<SecretBootstrap, "env">;
+  /** Which SQL engine is live and whether SQLite stood in for an unreachable MySQL. */
+  sql: Omit<SqlConnection, "db">;
   log: Logger;
   clock: Clock;
   db: Db;
@@ -64,22 +69,27 @@ export interface CreateContextOptions {
   audioStore?: AudioStore;
   mailer?: Mailer;
   seed?: boolean;
+  /** Replaces the Secrets Manager call (tests). */
+  secretFetcher?: SecretFetcher;
 }
 
 export async function createContext(opts: CreateContextOptions = {}): Promise<AppContext> {
-  const config = loadConfig(opts.env ?? process.env, opts.overrides);
+  const inputEnv = opts.env ?? process.env;
+  const bootLog = createLogger(inputEnv.LOG_LEVEL || "info");
+  const { env: bootedEnv, ...boot } = await bootstrapSecrets(inputEnv, bootLog, { fetch: opts.secretFetcher });
+  const config = loadConfig(bootedEnv, opts.overrides);
   const log = createLogger(config.LOG_LEVEL);
   const clock = new Clock();
-  const db = await openDb(config);
+  const { db, ...sql } = await connectSql(config, log);
   const ran = await migrate(db, () => clock.nowIso());
-  if (ran.length) log.info({ migrations: ran }, "migrations applied");
+  if (ran.length) log.info({ migrations: ran, dialect: db.dialect }, "migrations applied");
 
   const patients = new PatientsRepo(db);
   const links = new LinksRepo(db);
   const jobs = new JobsRepo(db);
   const audit = new AuditRepo(db);
   const checklist = new ChecklistRepo(db);
-  const docStore = createDocumentStore(config, db);
+  const docStore = createDocumentStore(config, db, resolveDocStore(config, boot.loaded));
   const secureDocs = new SecureDocs(docStore);
   const audioStore = opts.audioStore ?? createAudioStore(config);
   const secureAudio = new SecureAudio(audioStore);
@@ -103,6 +113,8 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
 
   const ctx: AppContext = {
     config,
+    boot,
+    sql,
     log,
     clock,
     db,
