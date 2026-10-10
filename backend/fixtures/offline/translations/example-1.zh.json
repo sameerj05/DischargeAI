@@ -1,0 +1,76 @@
+{
+  "readingLevel": "grade5",
+  "language": "zh",
+  "summary": "您住院是因为您的心脏无力，肺里积了水。您还得了一种叫肺炎的肺部感染。您带着四种新药回家，lisinopril 已经停用。每天早上称体重，少吃盐。把所有抗生素药片吃完。",
+  "diagnoses": [
+    { "plain": "心脏无力，泵血不好，还有多余的积水（心力衰竭）", "clinical": "Acute on chronic HFrEF, EF 30%" },
+    { "plain": "右下肺的肺部感染（肺炎）", "clinical": "Community-acquired right lower lobe pneumonia" },
+    { "plain": "肾脏曾短时间受到损伤，现在正在好转", "clinical": "Acute kidney injury, improved" },
+    { "plain": "高血压", "clinical": "Hypertension" },
+    { "plain": "糖尿病（血糖高）", "clinical": "Type 2 diabetes mellitus" },
+    { "plain": "长期的心跳不规则", "clinical": "Chronic atrial fibrillation" },
+    { "plain": "长期的红细胞偏低", "clinical": "Chronic anemia" }
+  ],
+  "medications": {
+    "new": [
+      { "name": "Furosemide", "dose": "40 mg", "howOften": "每天一次，口服", "why": "一种利尿药。它帮助身体排出多余的水分，让您呼吸更顺畅。您会更常排尿；请在早上服用。" },
+      { "name": "Losartan", "dose": "25 mg", "howOften": "每天一次，口服", "why": "帮助您的心脏并降低血压。它替代了 lisinopril。" },
+      { "name": "Empagliflozin", "dose": "10 mg", "howOften": "每天一次，口服", "why": "帮助您的心脏和糖尿病。" },
+      { "name": "Amoxicillin-clavulanate", "dose": "875/125 mg", "howOften": "每天两次，口服，再服 3 天", "why": "一种抗生素，用来治完您的肺炎。即使感觉好了也要每次都吃。" }
+    ],
+    "continue": [
+      { "name": "Metoprolol succinate", "dose": "50 mg", "howOften": "每天一次", "why": "减慢心跳，帮助心脏泵血更好。" },
+      { "name": "Apixaban", "dose": "5 mg", "howOften": "每天两次", "why": "一种血液稀释剂，防止心跳不规则引起血栓。注意出血。" },
+      { "name": "Atorvastatin", "dose": "40 mg", "howOften": "每天晚上", "why": "降低胆固醇，保护心脏。" },
+      { "name": "Metformin", "dose": "500 mg", "howOften": "每天两次", "why": "控制血糖。只要肾功能检查稳定就继续服用。" }
+    ],
+    "stop": [
+      { "name": "Lisinopril", "why": "已停用。现在由 Losartan 代替，所以不要两种都吃。" },
+      { "name": "Spironolactone", "why": "暂停，直到医生检查您的肾脏和血钾。不要自己重新开始吃。" },
+      { "name": "Ibuprofen/other NSAIDs", "why": "避免布洛芬这类止痛药。它们会伤害您的心脏和肾脏。吃任何止痛药前先问医生。" }
+    ]
+  },
+  "checklist": [
+    { "id": "med-1", "type": "med", "text": "每天一次服用 Furosemide 40 mg，早上服用", "due": "每天" },
+    { "id": "med-2", "type": "med", "text": "每天一次服用 Losartan 25 mg", "due": "每天" },
+    { "id": "med-3", "type": "med", "text": "每天一次服用 Empagliflozin 10 mg", "due": "每天" },
+    { "id": "med-4", "type": "med", "text": "每天两次服用 Amoxicillin-clavulanate 875/125 mg，直到吃完", "due": "接下来 3 天" },
+    { "id": "med-5", "type": "med", "text": "停用 lisinopril。在医生另有指示前，spironolactone 继续暂停", "due": "今天" },
+    { "id": "vital-1", "type": "vital", "text": "每天早上同一时间称体重，记下体重和您的感觉", "due": "每天早上" },
+    { "id": "lab-1", "type": "lab", "text": "在第一次复诊前或复诊时做肾脏和血钾的血液检查（基础代谢检查）", "due": "1 周内" },
+    { "id": "appt-1", "type": "appointment", "text": "看您的家庭医生", "due": "大约 1 周内" },
+    { "id": "appt-2", "type": "appointment", "text": "看您的心脏医生（心脏科）", "due": "大约 1 周内" },
+    { "id": "life-1", "type": "lifestyle", "text": "吃低盐饮食：每天大约 2 克钠", "due": "每天" },
+    { "id": "life-2", "type": "lifestyle", "text": "遵守心衰团队给您的液体限制", "due": "每天" }
+  ],
+  "returnPrecautions": {
+    "call911": [
+      "胸痛或胸闷",
+      "昏倒或严重头晕",
+      "新出现的意识混乱或严重无力",
+      "严重气短，尤其是在休息时"
+    ],
+    "goToER": [
+      "腿或肚子迅速肿胀",
+      "尿量比平时少很多",
+      "发烧或咳嗽加重，即使在用抗生素"
+    ],
+    "callClinic": [
+      "体重快速增加，或肿胀、气短加重，按心衰团队给您的体重计划处理",
+      "服用 apixaban 期间任何让您担心的出血",
+      "开始任何新药之前，包括非处方止痛药"
+    ]
+  },
+  "followUps": [
+    { "who": "家庭医生", "when": "大约 1 周内", "why": "检查您的恢复情况、肾脏检查结果和用药" },
+    { "who": "心脏科（心脏医生）", "when": "大约 1 周内", "why": "检查您的心衰治疗计划，决定何时重新开始 spironolactone" },
+    { "who": "心衰团队", "when": "如果体重快速上升，立即联系", "why": "在积水再次出现前调整您的利尿药" }
+  ],
+  "questionsToAsk": [
+    "一天或一周内体重增加多少，我就应该给您打电话？",
+    "您什么时候决定我能否重新开始 spironolactone？",
+    "如果我漏服了一次 furosemide 或 losartan，该怎么办？",
+    "除了布洛芬，哪些止痛药对我是安全的？",
+    "我的血液检查是什么时候，需要空腹吗？"
+  ]
+}

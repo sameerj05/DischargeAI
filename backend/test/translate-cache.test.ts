@@ -50,7 +50,7 @@ describe("translate", () => {
   });
 
   it("keeps medication names and doses verbatim in a non-fixture language", async () => {
-    const res = await request(t.app).get(`/translate?link=${linkId}&language=zh`);
+    const res = await request(t.app).get(`/translate?link=${linkId}&language=pt`);
     expect(res.status).toBe(200);
     expect(res.body.medications.new.map((m: { name: string; dose: string }) => `${m.name}|${m.dose}`)).toEqual([
       "Furosemide|40 mg",
