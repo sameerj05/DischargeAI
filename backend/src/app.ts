@@ -11,6 +11,7 @@ import { rateLimit } from "./middleware/rateLimit.js";
 import { adminRouter } from "./routes/admin.js";
 import { auditRouter } from "./routes/audit.js";
 import { checklistRouter } from "./routes/checklist.js";
+import { contractsRouter } from "./routes/contracts.js";
 import { healthRouter } from "./routes/health.js";
 import { ingestRouter } from "./routes/ingest.js";
 import { jobsRouter } from "./routes/jobs.js";
@@ -48,6 +49,7 @@ export function buildApp(ctx: AppContext): Express {
   });
 
   app.use(healthRouter(ctx));
+  app.use(contractsRouter());
 
   // OpenAPI: served from backend/openapi.yaml when present.
   if (existsSync(OPENAPI_FILE)) {

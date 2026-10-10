@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sameerj05/DischargeAI/backend/contracts/ai-output.schema.json",
+  "title": "DischargeAI AI output (per language)",
+  "description": "The fixed per-language object the AI pipeline (lane 3) returns and the patient dashboard (lane 1) renders: steps, medications, followUps, warnings, plus language and readingLevel. Richer fields are optional extras. Generated from backend/src/agents/aiOutput.ts; do not edit by hand.",
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "minLength": 2,
+      "description": "BCP-47 code of every patient-facing string in this object"
+    },
+    "readingLevel": {
+      "type": "string",
+      "enum": [
+        "grade5"
+      ]
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable id, e.g. med-1, appt-1, vital-1; the checklist check-off endpoint uses it"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One action the patient can do, in the object's language"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "med",
+              "appointment",
+              "referral",
+              "vital",
+              "lab",
+              "lifestyle"
+            ],
+            "description": "med | appointment | referral | vital | lab | lifestyle"
+          },
+          "due": {
+            "description": "When, in plain words, e.g. 'every morning'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "category"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "medications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Drug name exactly as written in the clinician's text, never translated"
+          },
+          "dose": {
+            "type": "string",
+            "description": "Dose exactly as written in the source, e.g. '40 mg'; empty when the source gives none or the drug is stopped"
+          },
+          "howOften": {
+            "type": "string",
+            "description": "How often and how, in the object's language; numbers stay verbatim; empty for stopped drugs"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "continue",
+              "stop"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "description": "Why the patient takes it, or why it was stopped or held, in plain words"
+          },
+          "startDate": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dose",
+          "howOften",
+          "status",
+          "why"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "followUps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "who": {
+            "type": "string",
+            "minLength": 1
+          },
+          "when": {
+            "type": "string",
+            "minLength": 1
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "who",
+          "when",
+          "why"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": [
+              "call911",
+              "er",
+              "clinic"
+            ],
+            "description": "call911: life threatening; er: same-day urgent care; clinic: call the care team"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "tier",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Return precautions by tier, plus any safety notice the patient must act on"
+    },
+    "summary": {
+      "description": "3 to 5 short sentences (richer field, optional)",
+      "type": "string"
+    },
+    "diagnoses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "plain": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Plain-language name"
+          },
+          "clinical": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Clinical name from the source"
+          }
+        },
+        "required": [
+          "plain",
+          "clinical"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "checklist": {
+      "description": "The richer checklist the steps were projected from",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable short id, e.g. med-1, appt-1, vital-1"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "med",
+              "appointment",
+              "referral",
+              "vital",
+              "lab",
+              "lifestyle"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One action the patient can tick off"
+          },
+          "due": {
+            "description": "When, in plain words, e.g. 'every morning', 'within 1 week'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "questionsToAsk": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "language",
+    "readingLevel",
+    "steps",
+    "medications",
+    "followUps",
+    "warnings"
+  ],
+  "additionalProperties": {}
+}
