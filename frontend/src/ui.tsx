@@ -23,6 +23,8 @@ export type IconName =
   | "warning"
   | "globe"
   | "textSize"
+  | "speaker"
+  | "speakerOff"
 
 const iconPaths: Record<IconName, ReactNode> = {
   activity: <path d="M3 12h4l3 8 4-16 3 8h4" />,
@@ -138,6 +140,18 @@ const iconPaths: Record<IconName, ReactNode> = {
     <>
       <path d="M3 18 7 7l4 11M4.2 14.5h5.6" />
       <path d="M13.5 18 17 9l3.5 9M14.3 15.3h5.4" />
+    </>
+  ),
+  speaker: (
+    <>
+      <path d="M11 5 6 9H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h3l5 4V5Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14" />
+    </>
+  ),
+  speakerOff: (
+    <>
+      <path d="M11 5 6 9H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h3l5 4V5Z" />
+      <path d="M23 9l-6 6M17 9l6 6" />
     </>
   ),
 }
