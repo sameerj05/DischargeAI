@@ -77,4 +77,4 @@ mcp/lambda/
 # DischargeAI: not needed in the runtime image
 output/
 samples/
-patient_agents/
+# patient_agents/ is included: the runtime uses its translator for the byLang translations.

@@ -1,7 +1,10 @@
 // Calls the DischargeAI agent deployed on Amazon Bedrock AgentCore Runtime.
 // Usage in server.js:
 //   import { generateGoingHomePlan } from "./dischargeAgent.js";
-//   const { result, status, flags } = await generateGoingHomePlan(notes, sessionId);
+//   const { record, status, flags, translations } = await generateGoingHomePlan(notes, sessionId);
+//   // record = { createdAt, byLang: { en, es, zh, ar } } — the frontend's DischargeRecord (frontend/src/data.ts).
+//   // Store it as-is and return it from GET /output/:patientId. A language whose translation
+//   // failed is missing from byLang; translations[lang].status says why ("failed" / "needs_review").
 //
 // Requires: npm install @aws-sdk/client-bedrock-agentcore
 // Env: AGENT_RUNTIME_ARN (from `agentcore status`), AWS_REGION (us-west-2)
@@ -26,5 +29,5 @@ export async function generateGoingHomePlan(notes, sessionId = randomUUID() + "-
     accept: "application/json",
   }));
   const text = await res.response.transformToString();
-  return JSON.parse(text);                 // { result: "<Going-Home Plan Markdown>", status, flags }
+  return JSON.parse(text);                 // { result: "<Markdown>", status, flags, record, translations }
 }

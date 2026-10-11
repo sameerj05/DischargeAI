@@ -128,18 +128,34 @@ _GENERIC = {"medicine", "medicines", "medication", "medications", "inhaler", "in
             "name", "pain", "anti-inflammatory", "your", "everyday", "daily", "list", "final", "check", "blood",
             "thinner", "water", "sugar", "high", "lower-dose", "extra", "long-term", "drugs", "drug", "heart",
             "pressure", "kidney", "cholesterol", "stomach", "sleep", "vitamin", "vitamins", "supplement",
-            "supplements", "drops", "cream", "injection", "shot", "spray"}
+            "supplements", "drops", "cream", "injection", "shot", "spray",
+            # dosing words that appear in "name, dose, and how often" entries
+            "mouth", "once", "twice", "times", "nightly", "morning", "evening", "bedtime", "needed", "every",
+            "hours", "tablet", "tablets", "capsule", "capsules", "with", "food", "meals", "more", "days", "week",
+            "weeks", "only", "until", "then", "puffs", "puff", "units", "through", "line",
+            # connecting words in names like "Pain medicines (NSAIDs), for example, Ibuprofen"
+            "example", "such", "like", "including", "these", "this", "that", "also"}
 
 
-def drug_names(markdown: str) -> list[str]:
-    """Drug names from the plan's medicine lists that must stay as written ('Nicotine patch' -> 'Nicotine')."""
+def drug_words(medicine_names: list[str]) -> list[str]:
+    """Drug-name words that must stay as written ('Nicotine patch 21 mg' -> 'Nicotine').
+
+    Only the words before the dose count ("Amoxicillin-clavulanate 875/125 mg by mouth twice daily for
+    3 additional days" -> "Amoxicillin-clavulanate"), so dosing words are free to be translated.
+    """
     names = []
-    for m in parse_medicines(markdown):
-        for word in m.name.split():
+    for name in medicine_names:
+        head = re.split(r"\d", name, maxsplit=1)[0]
+        for word in re.sub(r"[(),;:—–]", " ", head).split():
             if (len(word) >= 4 and word.lower() not in _GENERIC and "dose" not in word.lower()
                     and re.fullmatch(r"[A-Za-z][A-Za-z\-]+", word)):
                 names.append(word)
     return list(dict.fromkeys(names))
+
+
+def drug_names(markdown: str) -> list[str]:
+    """Drug names from the plan's medicine lists that must stay as written ('Nicotine patch' -> 'Nicotine')."""
+    return drug_words([m.name for m in parse_medicines(markdown)])
 
 
 def check_line(line: Line, med_names: list[str]) -> list[str]:
@@ -196,6 +212,29 @@ def _verify(client, model: str, language: str, lines: list[Line]) -> dict[int, s
             if isinstance(p, dict) and p.get("id") in valid}
 
 
+def _run_lines(client, model: str, language: str, lines: list[Line], med_names: list[str],
+               log=print) -> tuple[int, dict[int, list[str]]]:
+    """Translate, code-check, meaning-check, and re-translate flagged lines (in place).
+    Returns (rounds used, remaining problems by line id)."""
+    by_id = {l.id: l for l in lines}
+    todo, feedback, problems = list(lines), {}, {}
+    rnd = 0
+    for rnd in range(1, MAX_FIX_ROUNDS + 2):
+        for line_id, text in _translate(client, model, language, todo, feedback).items():
+            if line_id in by_id:
+                # Bold the English does not have would show as literal ** on a plain-text page.
+                by_id[line_id].text = text if "**" in by_id[line_id].source else text.replace("**", "")
+        code = {l.id: p for l in lines if (p := check_line(l, med_names))}
+        meaning = _verify(client, model, language, todo)
+        problems = {i: code.get(i, []) + ([meaning[i]] if i in meaning else []) for i in set(code) | set(meaning)}
+        log(f"[{language}] round {rnd}: translated {len(todo)} line(s), {len(problems)} with problems")
+        if not problems or rnd > MAX_FIX_ROUNDS:
+            break
+        feedback = {i: "; ".join(p) for i, p in problems.items()}
+        todo = [by_id[i] for i in sorted(problems)]
+    return rnd, problems
+
+
 def translate_plan(markdown: str, language: str, settings: AgentSettings | None = None,
                    client=None, log=print) -> Translation:
     if not _LANGUAGE_OK.match(language.strip()):
@@ -203,29 +242,42 @@ def translate_plan(markdown: str, language: str, settings: AgentSettings | None 
     language = language.strip()
     settings = settings or AgentSettings.from_env()
     client = client or make_client(settings.aws_profile, settings.aws_region)
-    med_names = drug_names(markdown)
     raw_lines, lines = split_lines(markdown)
     by_id = {l.id: l for l in lines}
-
-    todo, feedback, problems = list(lines), {}, {}
-    for rnd in range(1, MAX_FIX_ROUNDS + 2):
-        for line_id, text in _translate(client, settings.translate_model, language, todo, feedback).items():
-            if line_id in by_id:
-                by_id[line_id].text = text
-        code = {l.id: p for l in lines if (p := check_line(l, med_names))}
-        meaning = _verify(client, settings.translate_model, language, todo)
-        problems = {i: code.get(i, []) + ([meaning[i]] if i in meaning else []) for i in set(code) | set(meaning)}
-        log(f"round {rnd}: translated {len(todo)} line(s), {len(problems)} with problems")
-        if not problems or rnd > MAX_FIX_ROUNDS:
-            break
-        feedback = {i: "; ".join(p) for i, p in problems.items()}
-        todo = [by_id[i] for i in sorted(problems)]
+    rnd, problems = _run_lines(client, settings.translate_model, language, lines, drug_names(markdown), log)
 
     out = list(raw_lines)
     for l in lines:
         out[l.id] = l.prefix + (l.text or l.source)
     listed = [f"line {i + 1}: \"{by_id[i].source}\" -> {'; '.join(p)}" for i, p in sorted(problems.items())]
     return Translation(language, "\n".join(out) + "\n", "needs_review" if problems else "verified", rnd, listed)
+
+
+# Frontend language codes (frontend/src/data.ts `Language`) -> language names for the model.
+FRONTEND_LANGUAGES = {"es": "Spanish", "zh": "Simplified Chinese", "ar": "Arabic"}
+
+
+def translate_discharge_plan(plan_en: dict[str, Any], lang: str, settings: AgentSettings | None = None,
+                             client=None, log=print) -> tuple[dict[str, Any], str, list[str]]:
+    """Translate the frontend `DischargePlan` (from dischargeai.frontend.to_discharge_plan).
+
+    Only strings change. Ids, group keys, and `trackable` are copied from English by code, so
+    checklist state survives a language switch. Returns (plan, "verified" | "needs_review", problems).
+    """
+    from dischargeai.frontend import medicine_names, text_fields, with_texts
+
+    if lang not in FRONTEND_LANGUAGES:
+        raise ValueError(f"Unsupported language code {lang!r}; use one of {', '.join(FRONTEND_LANGUAGES)}")
+    language = FRONTEND_LANGUAGES[lang]
+    settings = settings or AgentSettings.from_env()
+    client = client or make_client(settings.aws_profile, settings.aws_region)
+    fields = text_fields(plan_en)
+    lines = [Line(id=i, prefix="", source=text) for i, (_, text) in enumerate(fields)]
+    _, problems = _run_lines(client, settings.translate_model, language, lines,
+                             drug_words(medicine_names(plan_en)), log)
+    plan = with_texts(plan_en, lang, {path: (l.text or l.source) for (path, _), l in zip(fields, lines)})
+    listed = [f"\"{lines[i].source}\" -> {'; '.join(p)}" for i, p in sorted(problems.items())]
+    return plan, ("needs_review" if problems else "verified"), listed
 
 
 def main() -> int:
