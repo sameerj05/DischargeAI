@@ -361,26 +361,14 @@ function PatientPlan({
 
 // hideNewFlag defaults true — NEW is always redundant here since the
 // New Medicines section already lists every new drug.
-// Shows only the duration/caution part of a flag (strips leading "NEW, ").
 function MedCopy({ med, hideNewFlag = true }: { med: MedItem; hideNewFlag?: boolean }) {
   const isNewFlag = med.flag?.toUpperCase().startsWith("NEW")
-
-  // Strip "NEW" or "NEW, " prefix to show only the duration/caution text
-  const displayFlag = med.flag
-    ? med.flag.replace(/^NEW,?\s*/i, "").trim() || null
-    : null
-
-  const showFlag = !!(med.flag && !(hideNewFlag && isNewFlag && !displayFlag))
-
+  const showFlag = med.flag && !(hideNewFlag && isNewFlag)
   return (
     <span className="med-text">
       <span className="med-name-row">
         <strong className="med-name">{med.name}</strong>
-        {showFlag && displayFlag ? (
-          <span className={`med-flag med-flag-${flagTone(med.flag!)}`}>
-            {displayFlag}
-          </span>
-        ) : showFlag && !isNewFlag ? (
+        {showFlag ? (
           <span className={`med-flag med-flag-${flagTone(med.flag!)}`}>
             {med.flag}
           </span>
