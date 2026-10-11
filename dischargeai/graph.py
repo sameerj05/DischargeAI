@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import operator
 import re
+import time
 from dataclasses import asdict
 from typing import Annotated, Any, TypedDict
 
@@ -40,6 +41,7 @@ from .bedrock import make_client
 from .config import Settings
 from .plan_ops import (CATEGORY_GROUP, GROUPS, apply_edits, group_of, item_med_key, iter_items, linked_ids, med_key,
                        merge_sections)
+from .glossary import hard_word_problems, jargon_problems
 from .proof import lines_matching, proof_problems, urgency_problems
 from .readability import grade_level, missing_terms
 from .render import FREQUENCY_SLOTS, SLOTS, TIME_SLOTS, proof_entries, render_plan, render_review
@@ -51,6 +53,7 @@ FULL_MISSING = 5         # more than this many missing facts -> full rewrite
 SECTION_MIN_LINES = 4    # a section rewrite needs at least this many flagged lines ...
 SECTION_SHARE = 0.6      # ... with at least this share of them in one section group
 MODE_ORDER = {"patch": 0, "section": 1, "full": 2}
+SMALL_PLAN_PROBLEMS = 3  # a plan with this many problems or fewer is never fully rewritten
 MAX_HARD_LINES = 3       # reading level: flag at most this many lines per round ...
 HARD_LINE_MARGIN = 2.0   # ... and only lines this far above the grade limit
 
@@ -76,6 +79,7 @@ class DischargeState(TypedDict, total=False):
     status: str                                      # "approved" | "needs_clinician_check" | "needs_human_review"
     flags: list[str]                                 # reasons a plan still needs a clinician
     summary: str                                     # final output
+    started_at: float                                # time.time() when the run started (time budget)
 
 
 # ---------------------------------------------------------------------------
@@ -153,25 +157,28 @@ def reviewer_issues(review: Review, entries: list[dict[str, Any]]) -> list[dict[
 
 def readability_issues(review: Review, entries: list[dict[str, Any]], protected: list[str],
                        max_grade: float) -> list[dict[str, Any]]:
-    """If the plan reads above the limit, flag the specific hard lines so a patch can fix them."""
-    if review.grade_level <= max_grade:
-        return []
-    # One-line grade scores are noisy, so only the few hardest long lines are flagged. Getting
-    # an overall grade back under the limit only needs a handful of lines simplified.
-    scored = sorted(((grade_level(e["text"], protected), e) for e in entries if len(e["text"].split()) >= 8),
-                    key=lambda ge: ge[0], reverse=True)
-    picked = [ge for ge in scored if ge[0] > max_grade + HARD_LINE_MARGIN][:MAX_HARD_LINES] or scored[:1]
-    hard: dict[str, str] = {
-        e["id"]: f"HARD TO READ (grade {g:.1f}): \"{e['text']}\" -- use shorter sentences and simpler words."
-        for g, e in picked
-    }
-    for s in review.readability_issues:
-        for line_id in lines_matching(s, entries):
-            if len(hard) < MAX_HARD_LINES:
-                hard.setdefault(line_id, f"HARD TO READ: \"{s}\" -- use shorter sentences and simpler words.")
+    """Reading level is pass/fail.
+
+    1. Every line the reviewer says a 5th grader could not read blocks approval, whatever the
+       overall score is. These are tied to lines, so the fix is a patch of just those lines.
+    2. If the overall Flesch-Kincaid grade of the plain words is over the limit, the few
+       hardest long lines are flagged too (one-line scores are noisy, so only a handful).
+    """
+    hard: dict[str, str] = {}
+    for r in review.readability_issues:
+        for line_id in lines_matching(r["quote"], entries):
+            hard.setdefault(line_id, f"TOO HARD FOR A 5TH GRADER: \"{r['quote']}\" -- {r['problem']}")
+    if review.grade_level > max_grade:
+        scored = sorted(((grade_level(e["text"], protected), e) for e in entries if len(e["text"].split()) >= 8),
+                        key=lambda ge: ge[0], reverse=True)
+        picked = [ge for ge in scored if ge[0] > max_grade + HARD_LINE_MARGIN][:MAX_HARD_LINES] or scored[:1]
+        for g, e in picked:
+            hard.setdefault(e["id"], f"HARD TO READ (grade {g:.1f}): \"{e['text']}\" -- use shorter sentences "
+                                     "and simpler words.")
     issues = [_issue(text, [line_id]) for line_id, text in hard.items()]
-    summary = (f"TOO HARD TO READ overall: grade {review.grade_level:.1f}, the limit is {max_grade:.1f}.")
-    issues.append(_issue(summary, kind="global") if not issues else _issue(summary, kind="note"))
+    if review.grade_level > max_grade:
+        summary = f"TOO HARD TO READ overall: grade {review.grade_level:.1f}, the limit is {max_grade:.1f}."
+        issues.append(_issue(summary, kind="global") if not issues else _issue(summary, kind="note"))
     return issues
 
 
@@ -196,7 +203,9 @@ def mode_for(issues: list[dict[str, Any]], total_lines: int) -> tuple[str, list[
     if len(missing) > FULL_MISSING:
         return "full", [], f"{len(missing)} missing facts (> {FULL_MISSING})"
     if global_issues and not flagged and not missing and not group_issues:
-        return "full", [], "only plan-wide problems that are not tied to any line"
+        if len(global_issues) > SMALL_PLAN_PROBLEMS:
+            return "full", [], "only plan-wide problems that are not tied to any line"
+        return "section", ["care", "warnings"], "a few plan-wide problems that are not tied to any line"
 
     counts: dict[str, int] = {}
     for line_id in flagged:
@@ -238,11 +247,16 @@ def choose_fix_plan(rounds: list[dict[str, Any]]) -> dict[str, Any]:
 
     mode, groups, reason = mode_for(base["issues"], len(proof_entries(base["plan"])))
     last_mode = current["mode"]
-    if (rolled_back and last_mode != "full") or stalled:
+    # Escalate only when a fix did not help at all (stalled). A fix that made things worse is
+    # undone by rolling back, and the next try is the normal small fix from the best draft:
+    # bigger rewrites of a nearly finished plan were what made things worse in testing.
+    # A plan with only a few problems is never fully rewritten.
+    if stalled:
         escalated = _escalate(last_mode)
+        if escalated == "full" and len(base["problems"]) <= SMALL_PLAN_PROBLEMS:
+            escalated = "section"
         if MODE_ORDER[escalated] > MODE_ORDER[mode]:
-            why = "made things worse" if rolled_back else "did not reduce the problems"
-            mode, reason = escalated, f"last {last_mode} {why}, escalating"
+            mode, reason = escalated, f"last {last_mode} did not reduce the problems, escalating"
             if mode == "section" and not groups:
                 counts: dict[str, int] = {}
                 for line_id in _flagged(base["issues"]):
@@ -270,7 +284,9 @@ def build_graph(settings: Settings, client=None, cm_client=None):
     client = client or make_client(settings.aws_profile, settings.aws_region)
 
     def build_context(state: DischargeState) -> dict[str, Any]:
-        return {"patient_context": run_context_agent(client, settings.context_model, state["notes"]), "round": 0}
+        started = state.get("started_at") or time.time()
+        return {"patient_context": run_context_agent(client, settings.context_model, state["notes"]), "round": 0,
+                "started_at": started}
 
     def comprehend_medical(state: DischargeState) -> dict[str, Any]:
         if settings.comprehend_mode == "off":
@@ -324,8 +340,12 @@ def build_graph(settings: Settings, client=None, cm_client=None):
         # context agent, so this check does not depend on the reviewer remembering them.
         # Only names written verbatim in the notes are enforced: a garbled transcript word
         # must never be forced into the plan.
+        # Only real drug names are enforced. Descriptions like "Previous lower-dose furosemide
+        # regimen" or "Ibuprofen/other NSAIDs" must be allowed to be reworded in plain words.
         med_names = [m["name"] for m in context["medications"]
-                     if m["name_confidence"] == "exact" and m["name"].lower() in notes.lower()]
+                     if m["name_confidence"] == "exact" and m["name"].lower() in notes.lower()
+                     and len(m["name"].split()) <= 2 and not re.search(r"[/,]|regimen|previous|other|dose",
+                                                                       m["name"], re.I)]
         result.missing_med_names = missing_terms(draft, med_names)
         protected = med_names + [d["name"] for d in context["diagnoses"]] + result.medical_terms
         result.grade_level = grade_level(draft, protected)
@@ -334,11 +354,12 @@ def build_graph(settings: Settings, client=None, cm_client=None):
                   + urgency_problems(entries, notes)
                   + schedule_problems(plan)
                   + sensitive_problems(entries)
+                  + jargon_problems(entries)
+                  + hard_word_problems(entries)
                   + reviewer_issues(result, entries)
                   + readability_issues(result, entries, protected, settings.max_grade_level))
-        if not issues and not result.model_approved:
-            issues.append(_issue("Reviewer did not approve the plan but gave no specific reason. "
-                                 "Re-check every fact.", kind="global"))
+        # The plan passes when there are no problems. The reviewer's own approved flag is recorded
+        # but does not decide: it sometimes says "not approved" while listing nothing wrong.
         problems = [i["text"] for i in issues if i["kind"] != "note"]
         record = {
             "number": state["round"],
@@ -380,12 +401,22 @@ def build_graph(settings: Settings, client=None, cm_client=None):
     def human_review(state: DischargeState) -> dict[str, Any]:
         # Never hand an unapproved summary to a patient as if it were final.
         best = min(state["rounds"], key=lambda r: (len(r["problems"]), -r["number"]))
-        return _final(best["plan"], "needs_human_review", [])
+        flags = ["Stopped at the time limit before the plan passed review."] if _out_of_time(state) else []
+        return _final(best["plan"], "needs_human_review", flags)
+
+    def _out_of_time(state: DischargeState) -> bool:
+        """True if another round is not expected to finish within the time budget."""
+        budget = settings.time_budget_seconds
+        if budget <= 0 or not state.get("started_at"):
+            return False
+        elapsed = time.time() - state["started_at"]
+        per_round = elapsed / max(1, state.get("round", 1))  # includes the setup steps, so it errs long
+        return elapsed + per_round > budget
 
     def route_after_review(state: DischargeState) -> str:
         if state["last_passed"]:
             return "finalize"
-        if state["round"] >= settings.max_rounds:
+        if state["round"] >= settings.max_rounds or _out_of_time(state):
             return "human_review"
         return "choose_fix"
 

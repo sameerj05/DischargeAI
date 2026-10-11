@@ -25,6 +25,9 @@ class Settings:
     # without it otherwise; "on" fails the run if it is unavailable; "off" skips it.
     comprehend_mode: str = "auto"
     comprehend_region: str = "us-west-2"
+    # Seconds the whole run may take (0 = no limit). A new round only starts if it is
+    # expected to finish in time; otherwise the best draft so far goes to human review.
+    time_budget_seconds: int = 0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -35,12 +38,14 @@ class Settings:
             writer_model=os.environ.get("DISCHARGEAI_WRITER_MODEL", DEFAULT_WRITER_MODEL),
             reviewer_model=os.environ.get("DISCHARGEAI_REVIEWER_MODEL", DEFAULT_REVIEWER_MODEL),
             max_rounds=int(os.environ.get("DISCHARGEAI_MAX_ROUNDS", "4")),
-            # Flesch-Kincaid grade. 6.0 means "reads at or below the end of 5th grade".
-            max_grade_level=float(os.environ.get("DISCHARGEAI_MAX_GRADE", "6.0")),
+            # Flesch-Kincaid grade of the plain words (parenthesized medical terms are not scored).
+            # 5.9 = no higher than 5th grade.
+            max_grade_level=float(os.environ.get("DISCHARGEAI_MAX_GRADE", "5.9")),
             comprehend_mode=_comprehend_mode(os.environ.get("DISCHARGEAI_COMPREHEND", "auto")),
             comprehend_region=os.environ.get(
                 "DISCHARGEAI_COMPREHEND_REGION", os.environ.get("DISCHARGEAI_AWS_REGION", "us-west-2")
             ),
+            time_budget_seconds=int(os.environ.get("DISCHARGEAI_TIME_BUDGET", "0")),
         )
 
 

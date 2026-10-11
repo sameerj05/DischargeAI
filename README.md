@@ -53,6 +53,30 @@ Test cases: `samples/test_cases.json` holds inline input cases (one structured, 
 
 Exit codes: 0 approved, 3 needs clinician check, 2 needs human review. Settings come from env vars: `DISCHARGEAI_AWS_PROFILE` (default `healthhack`), `DISCHARGEAI_AWS_REGION` (`us-west-2`), `DISCHARGEAI_CONTEXT_MODEL`, `DISCHARGEAI_WRITER_MODEL`, `DISCHARGEAI_REVIEWER_MODEL`, `DISCHARGEAI_MAX_ROUNDS` (`4`), `DISCHARGEAI_MAX_GRADE` (`6.0`).
 
+## Standalone patient agents (`patient_agents/`)
+
+Two agents that are NOT part of the pipeline above. Each takes a finished Going-Home Plan (`.md`) as input.
+
+Translator: translates the plan into any language, line by line, so the checklist layout cannot break. Code checks every line kept its numbers, doses, dates, bold markers, and medicine names; a second model call checks meaning. Flagged lines are re-translated up to 2 times, and the result is marked `verified` or `needs_review`.
+
+```powershell
+.\.venv\Scripts\python.exe -m patient_agents.translator output\stroke\stroke_left_mca.md --to Spanish
+```
+
+Chatbot: answers patient questions from the plan only.
+- Emergency or crisis words (chest pain, can't breathe, hurt myself) get an instant "call 911" or "call or text 988", with no model call.
+- "Should I take X?" is decided by code from the plan's medicine lists: on the take list = yes (quoting the plan line); stopped, or an old dose = no; not in the plan = no, and call your nurse or doctor. Requests to change a dose are always "take it only as your plan says".
+- Other questions are answered only when the model is confident, quotes plan lines that really exist, and adds no numbers or medicines the plan doesn't support.
+- Medical advice, diagnosis questions, sensitive topics, and anything uncertain get "please call your nurse or doctor".
+- Replies in English or Spanish.
+
+```powershell
+.\.venv\Scripts\python.exe -m patient_agents.chatbot output\stroke\stroke_left_mca.md
+.\.venv\Scripts\python.exe -m patient_agents.chatbot output\stroke\stroke_left_mca.md --ask "Should I take aspirin?" --debug
+```
+
+Models: `PATIENT_CHAT_MODEL`, `PATIENT_TRANSLATE_MODEL` (default Claude Sonnet 4.6). AWS settings are shared with the pipeline.
+
 ## Comprehend Medical
 
 `DISCHARGEAI_COMPREHEND` controls it: `auto` (default) uses it when allowed and otherwise continues on the raw notes, `on` stops the run if it is unavailable, `off` skips it. `DISCHARGEAI_COMPREHEND_REGION` defaults to the AWS region.

@@ -28,11 +28,14 @@ def _body_text(summary: str) -> str:
 def grade_level(summary: str, protected_terms: list[str]) -> float:
     """Flesch-Kincaid grade of the summary body.
 
-    Medicine names and diagnoses must stay exact (e.g. "empagliflozin"), and their syllable
-    counts would unfairly push the score up, so they are replaced with a one-word stand-in
-    before scoring.
+    The score measures the plain words the patient reads. Medical terms that sit in
+    parentheses after plain words ("fluid in your lungs (pulmonary edema)") are there on
+    purpose, so parenthesized text is left out. Medicine names and diagnoses must stay exact
+    (e.g. "empagliflozin"), and their syllable counts would unfairly push the score up, so
+    they are replaced with a one-word stand-in before scoring.
     """
-    text = _body_text(summary)
+    text = re.sub(r"\([^()]*\)", " ", _body_text(summary))
+    text = re.sub(r"\([^()]*\)", " ", text)  # second pass for one level of nesting
     for term in sorted({t for t in protected_terms if t.strip()}, key=len, reverse=True):
         text = re.sub(re.escape(term), "pill", text, flags=re.IGNORECASE)
     if not text.strip():
