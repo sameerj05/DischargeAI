@@ -43,7 +43,6 @@ export function Login({
     setError(null)
   }
 
-  // Keyboard operability for the tablist (left/right arrows).
   const onTabKeyDown = (event: React.KeyboardEvent, index: number) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return
     event.preventDefault()
@@ -58,20 +57,23 @@ export function Login({
     setError(null)
     setBusy(true)
     try {
-      if (role === "patient") {
+      if (role === "patient" || role === "caregiver") {
+        // Both patient and caregiver use access link + DOB
         const token = parsePatientLink(accessLink)
         const session = await resolvePatientToken(token, dob)
+        // Guard: token must resolve to the correct role
+        if (session.role !== role) {
+          throw new Error("The information entered doesn't match our records.")
+        }
         onLogin(session)
       } else {
         const session = await login({ email, password })
-        // Guard: a doctor-tab submit must not open a caregiver session, etc.
         if (session.role !== role) {
           throw new Error("The information entered doesn't match our records.")
         }
         onLogin(session)
       }
     } catch (err) {
-      // Never echo credentials or PHI — surface a generic message only.
       setError(
         err instanceof Error
           ? err.message
@@ -129,32 +131,7 @@ export function Login({
         </div>
 
         <form className="login-form" onSubmit={handleSubmit} noValidate>
-          {role === "patient" ? (
-            <>
-              <div className="field">
-                <label htmlFor="access-link">Access link or code</label>
-                <input
-                  autoComplete="off"
-                  id="access-link"
-                  inputMode="text"
-                  onChange={(e) => setAccessLink(e.target.value)}
-                  placeholder="Paste the link from your care team"
-                  type="text"
-                  value={accessLink}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="dob">Confirm your date of birth</label>
-                <input
-                  autoComplete="off"
-                  id="dob"
-                  onChange={(e) => setDob(e.target.value)}
-                  type="date"
-                  value={dob}
-                />
-              </div>
-            </>
-          ) : (
+          {role === "doctor" ? (
             <>
               <div className="field">
                 <label htmlFor="email">Email</label>
@@ -176,6 +153,35 @@ export function Login({
                   placeholder="••••••••"
                   type="password"
                   value={password}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <label htmlFor="access-link">
+                  {role === "caregiver" ? "Patient access link or code" : "Access link or code"}
+                </label>
+                <input
+                  autoComplete="off"
+                  id="access-link"
+                  inputMode="text"
+                  onChange={(e) => setAccessLink(e.target.value)}
+                  placeholder="Paste the link from the care team"
+                  type="text"
+                  value={accessLink}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="dob">
+                  {role === "caregiver" ? "Patient's date of birth" : "Confirm your date of birth"}
+                </label>
+                <input
+                  autoComplete="off"
+                  id="dob"
+                  onChange={(e) => setDob(e.target.value)}
+                  type="date"
+                  value={dob}
                 />
               </div>
             </>
@@ -218,7 +224,7 @@ export function Login({
             <div className="demo-row">
               <dt>Caregiver</dt>
               <dd>
-                {DEMO_CAREGIVER.email} · {DEMO_CAREGIVER.password}
+                {DEMO_CAREGIVER.link} · DOB {DEMO_CAREGIVER.dob}
               </dd>
             </div>
             <div className="demo-row">
