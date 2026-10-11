@@ -32,7 +32,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
-            aws_profile=os.environ.get("DISCHARGEAI_AWS_PROFILE", "healthhack") or None,
+            aws_profile=os.environ.get("DISCHARGEAI_AWS_PROFILE", "") or None,
             aws_region=os.environ.get("DISCHARGEAI_AWS_REGION", "us-west-2"),
             context_model=os.environ.get("DISCHARGEAI_CONTEXT_MODEL", DEFAULT_CONTEXT_MODEL),
             writer_model=os.environ.get("DISCHARGEAI_WRITER_MODEL", DEFAULT_WRITER_MODEL),

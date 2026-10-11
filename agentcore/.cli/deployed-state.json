@@ -1,0 +1,17 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "runtimes": {
+          "DischargeAI": {
+            "runtimeId": "DischargeAIAgent_DischargeAI-y8mQ6FEN5u",
+            "runtimeArn": "arn:aws:bedrock-agentcore:us-west-2:183815333909:runtime/DischargeAIAgent_DischargeAI-y8mQ6FEN5u",
+            "roleArn": "arn:aws:iam::183815333909:role/AgentCore-DischargeAIAgen-ApplicationAgentDischarge-KpmLnw7fxsRi"
+          }
+        },
+        "stackName": "AgentCore-DischargeAIAgent-default",
+        "deployHash": "6da3aa2e41fadfec"
+      }
+    }
+  }
+}

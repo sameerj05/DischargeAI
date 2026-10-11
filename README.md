@@ -51,7 +51,7 @@ Test cases: `samples/test_cases.json` holds inline input cases (one structured, 
 .\.venv\Scripts\python.exe -m dischargeai.run_cases --only natural_language_gi_bleed --out output\gi.json
 ```
 
-Exit codes: 0 approved, 3 needs clinician check, 2 needs human review. Settings come from env vars: `DISCHARGEAI_AWS_PROFILE` (default `healthhack`), `DISCHARGEAI_AWS_REGION` (`us-west-2`), `DISCHARGEAI_CONTEXT_MODEL`, `DISCHARGEAI_WRITER_MODEL`, `DISCHARGEAI_REVIEWER_MODEL`, `DISCHARGEAI_MAX_ROUNDS` (`4`), `DISCHARGEAI_MAX_GRADE` (`6.0`).
+Exit codes: 0 approved, 3 needs clinician check, 2 needs human review. Settings come from env vars: `DISCHARGEAI_AWS_PROFILE` (default `""`), `DISCHARGEAI_AWS_REGION` (`us-west-2`), `DISCHARGEAI_CONTEXT_MODEL`, `DISCHARGEAI_WRITER_MODEL`, `DISCHARGEAI_REVIEWER_MODEL`, `DISCHARGEAI_MAX_ROUNDS` (`4`), `DISCHARGEAI_MAX_GRADE` (`6.0`).
 
 ## Standalone patient agents (`patient_agents/`)
 
