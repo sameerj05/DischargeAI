@@ -2120,9 +2120,11 @@ h1 {
 
 .med-name-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
 }
 
 .med-name {
@@ -2143,11 +2145,12 @@ h1 {
 }
 
 .med-flag {
-  border-radius: 20px;
-  padding: 3px 10px;
-  font-size: 11px;
+  flex: none;
+  border-radius: 10px;
+  padding: 4px 14px;
+  font-size: calc(var(--patient-font-scale, 1) * clamp(15px, 2.2vw, 18px));
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .med-flag-new {
@@ -2156,8 +2159,9 @@ h1 {
 }
 
 .med-flag-caution {
-  background: var(--coral-soft);
-  color: var(--coral-strong);
+  background: var(--coral);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(217, 127, 108, 0.35);
 }
 
 .med-plain {

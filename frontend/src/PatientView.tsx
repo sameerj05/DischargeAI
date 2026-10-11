@@ -192,13 +192,6 @@ function PatientPlan({
           <h2 id="meds-head" className="patient-section-title">
             <Icon name="pill" size={22} /> {t(language, "medicationsTitle")}
           </h2>
-          {medIds.length > 0 ? (
-            <ChecklistProgress
-              done={medProgress.done}
-              total={medProgress.total}
-              language={language}
-            />
-          ) : null}
         </div>
         <p className="patient-section-intro">{plan.medications.intro}</p>
 
@@ -366,13 +359,17 @@ function PatientPlan({
   )
 }
 
-function MedCopy({ med }: { med: MedItem }) {
+// hideNewFlag defaults true — NEW is always redundant here since the
+// New Medicines section already lists every new drug.
+function MedCopy({ med, hideNewFlag = true }: { med: MedItem; hideNewFlag?: boolean }) {
+  const isNewFlag = med.flag?.toUpperCase().startsWith("NEW")
+  const showFlag = med.flag && !(hideNewFlag && isNewFlag)
   return (
     <span className="med-text">
       <span className="med-name-row">
         <strong className="med-name">{med.name}</strong>
-        {med.flag ? (
-          <span className={`med-flag med-flag-${flagTone(med.flag)}`}>
+        {showFlag ? (
+          <span className={`med-flag med-flag-${flagTone(med.flag!)}`}>
             {med.flag}
           </span>
         ) : null}
