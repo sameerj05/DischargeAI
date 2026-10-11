@@ -906,7 +906,6 @@ h1 {
 
 .checklist-item.is-done .checklist-label {
   color: var(--text-muted);
-  text-decoration: line-through;
 }
 
 .team-list,
@@ -2098,7 +2097,6 @@ h1 {
 
 .track-item.is-done .track-label {
   color: var(--text-muted);
-  text-decoration: line-through;
 }
 
 .track-detail {
@@ -2134,7 +2132,6 @@ h1 {
 
 .track-item.is-done .med-name {
   color: var(--text-muted);
-  text-decoration: line-through;
 }
 
 .med-reason {
