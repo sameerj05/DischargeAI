@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+﻿import { useEffect, useRef, useState } from "react"
 import { Icon, BrandMark } from "./ui"
 import { type Session } from "./auth"
 import { useTranscribeMedical } from "./useTranscribeMedical"
@@ -87,30 +87,16 @@ function statusClass(status: string) {
   return "status-pill status-draft"
 }
 
-type Stat = {
-  label: string
-  value: string
-  hint: string
-  highlight?: boolean
-}
+type Stat = { label: string; value: string; hint: string; highlight?: boolean }
 
 const stats: Stat[] = [
   { label: "Pending discharges", value: "7", hint: "+2 since yesterday" },
   { label: "Drafts in review", value: "4", hint: "2 awaiting sign-off" },
-  {
-    label: "Sent today",
-    value: "12",
-    hint: "+18% vs. avg",
-    highlight: true,
-  },
+  { label: "Sent today", value: "12", hint: "+18% vs. avg", highlight: true },
   { label: "Avg. completion time", value: "6m", hint: "-1m this week" },
 ]
 
-type ChecklistItem = {
-  id: string
-  label: string
-  done: boolean
-}
+type ChecklistItem = { id: string; label: string; done: boolean }
 
 const initialChecklist: ChecklistItem[] = [
   { id: "c1", label: "Medication reconciliation", done: true },
@@ -120,11 +106,7 @@ const initialChecklist: ChecklistItem[] = [
   { id: "c5", label: "Transportation arranged", done: false },
 ]
 
-type TeamMember = {
-  initials: string
-  name: string
-  role: string
-}
+type TeamMember = { initials: string; name: string; role: string }
 
 const careTeam: TeamMember[] = [
   { initials: "AR", name: "Dr. A. Rivera", role: "Attending" },
@@ -132,13 +114,9 @@ const careTeam: TeamMember[] = [
   { initials: "MD", name: "M. Delgado", role: "Pharmacist" },
 ]
 
-type ActivityEntry = {
-  description: string
-  time: string
-}
+type ActivityEntry = { description: string; time: string }
 
 const activity: ActivityEntry[] = [
-  { description: "Draft saved", time: "2m ago" },
   { description: "PDF uploaded", time: "1h ago" },
   { description: "Note dictated", time: "3h ago" },
   { description: "Patient record opened", time: "5h ago" },
@@ -165,12 +143,15 @@ function PatientNavItem({
   )
 }
 
-// Build avatar initials from a display name (e.g. "Dr. A. Rivera" -> "AR").
 function initialsFrom(name: string) {
   const words = name.replace(/^dr\.?\s+/i, "").split(/\s+/).filter(Boolean)
   const letters = words.map((w) => w[0]).join("")
   return (letters.slice(0, 2) || "DR").toUpperCase()
 }
+
+// Per-patient note store
+type PatientNote = { text: string; inputType: "text" | "pdf" | "dictation" }
+const emptyNote = (): PatientNote => ({ text: "", inputType: "text" })
 
 export function DoctorDashboard({
   session,
@@ -179,32 +160,72 @@ export function DoctorDashboard({
   session: Session
   onLogout: () => void
 }) {
-  const [mode, setMode] = useState<"write" | "dictate" | "pdf">("write")
-  const [note, setNote] = useState("")
+  // Map of patientId -> note so switching patients preserves each writeup
+  const [notes, setNotes] = useState<Record<string, PatientNote>>({})
+  const [selectedPatientId, setSelectedPatientId] = useState(patients[0].id)
   const [seconds, setSeconds] = useState(0)
   const [sending, setSending] = useState(false)
-  const [pdfFile, setPdfFile] = useState<File | null>(null)
-  const [pdfDragging, setPdfDragging] = useState(false)
-  const [pdfText, setPdfText] = useState("")
-  const [pdfStatus, setPdfStatus] = useState<"idle" | "extracting" | "done" | "scanned" | "error">("idle")
-  const [pdfMessage, setPdfMessage] = useState("")
-  const [selectedPatientId, setSelectedPatientId] = useState(patients[0].id)
   const [checklist, setChecklist] = useState<ChecklistItem[]>(initialChecklist)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+
   const { transcript, isRecording, error: transcribeError, start: startRecording, stop: stopRecording } = useTranscribeMedical()
 
+  const currentNote = notes[selectedPatientId] ?? emptyNote()
+  const noteText = currentNote.text
+
+  const setNoteText = (text: string, inputType?: PatientNote["inputType"]) => {
+    setNotes((prev) => ({
+      ...prev,
+      [selectedPatientId]: {
+        text,
+        inputType: inputType ?? prev[selectedPatientId]?.inputType ?? "text",
+      },
+    }))
+  }
+
+  // Switch patient — stop any active recording first
+  const handleSelectPatient = (id: string) => {
+    if (isRecording) stopRecording()
+    setPdfError(null)
+    setSelectedPatientId(id)
+  }
+
+  // Append confirmed transcript words into the current patient note
+  const prevTranscriptRef = useRef("")
+  useEffect(() => {
+    if (transcript && transcript !== prevTranscriptRef.current) {
+      const newWords = transcript.slice(prevTranscriptRef.current.length).trimStart()
+      if (newWords) {
+        setNotes((prev) => {
+          const cur = prev[selectedPatientId] ?? emptyNote()
+          return {
+            ...prev,
+            [selectedPatientId]: {
+              text: cur.text ? cur.text + " " + newWords : newWords,
+              inputType: "dictation",
+            },
+          }
+        })
+      }
+      prevTranscriptRef.current = transcript
+    }
+  }, [transcript, selectedPatientId])
+
+  // Reset transcript ref when patient changes so old words don't bleed in
+  useEffect(() => {
+    prevTranscriptRef.current = ""
+  }, [selectedPatientId])
+
   const selectedPatient =
-    patients.find((patient) => patient.id === selectedPatientId) ?? patients[0]
+    patients.find((p) => p.id === selectedPatientId) ?? patients[0]
 
   const completedCount = checklist.filter((item) => item.done).length
-  const checklistProgress = Math.round(
-    (completedCount / checklist.length) * 100,
-  )
+  const checklistProgress = Math.round((completedCount / checklist.length) * 100)
 
   const toggleChecklistItem = (id: string) => {
     setChecklist((items) =>
-      items.map((item) =>
-        item.id === id ? { ...item, done: !item.done } : item,
-      ),
+      items.map((item) => (item.id === id ? { ...item, done: !item.done } : item))
     )
   }
 
@@ -216,45 +237,44 @@ export function DoctorDashboard({
 
   const formattedTime = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
 
+  // PDF upload — extracts text and inserts it into the unified textarea
   const handlePdfFile = async (file: File) => {
-    setPdfFile(file)
-    setPdfText("")
-    setPdfStatus("extracting")
-    setPdfMessage("")
+    setPdfError(null)
+    setPdfLoading(true)
     const result = await extractPdfText(file)
+    setPdfLoading(false)
     if (result.ok) {
-      setPdfText(result.text)
-      setPdfStatus("done")
-      setPdfMessage(`${result.pages} page${result.pages !== 1 ? "s" : ""} extracted`)
+      const insert = result.text
+      setNotes((prev) => {
+        const cur = prev[selectedPatientId] ?? emptyNote()
+        const joined = cur.text ? cur.text + "\n\n" + insert : insert
+        return { ...prev, [selectedPatientId]: { text: joined, inputType: "pdf" } }
+      })
     } else if (result.reason === "scanned") {
-      setPdfStatus("scanned")
-      setPdfMessage(result.message)
+      setPdfError(result.message)
     } else {
-      setPdfStatus("error")
-      setPdfMessage(result.message)
+      setPdfError(result.message)
     }
   }
 
-  const activeText = mode === "write" ? note : mode === "dictate" ? transcript : pdfText
-
   const handleDownload = () => {
-    if (!activeText) return
-    const blob = new Blob([activeText], { type: "text/plain" })
+    if (!noteText) return
+    const blob = new Blob([noteText], { type: "text/plain" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = "visit-writeup.txt"
+    a.download = `writeup-${selectedPatientId}.txt`
     a.click()
     URL.revokeObjectURL(url)
   }
 
   const handleSend = async () => {
-    if (!activeText || sending) return
+    if (!noteText || sending) return
     setSending(true)
     try {
       await postIngest({
-        data: activeText,
-        type: mode === "dictate" ? "dictation" : mode === "pdf" ? "pdf" : "text",
+        data: noteText,
+        type: currentNote.inputType,
         patientId: selectedPatient.id,
       })
     } catch (err) {
@@ -284,7 +304,7 @@ export function DoctorDashboard({
               <PatientNavItem
                 active={patient.id === selectedPatientId}
                 key={patient.id}
-                onSelect={() => setSelectedPatientId(patient.id)}
+                onSelect={() => handleSelectPatient(patient.id)}
                 patient={patient}
               />
             ))}
@@ -300,11 +320,7 @@ export function DoctorDashboard({
             </div>
             <Icon name="chevron" size={16} />
           </div>
-          <button
-            className="logout-button"
-            onClick={onLogout}
-            type="button"
-          >
+          <button className="logout-button" onClick={onLogout} type="button">
             <Icon name="logout" size={16} />
             Sign out
           </button>
@@ -323,11 +339,7 @@ export function DoctorDashboard({
             <Icon name="search" size={18} />
             <input aria-label="Search patients" placeholder="Search patients" />
           </label>
-          <button
-            aria-label="Notifications"
-            className="icon-button"
-            type="button"
-          >
+          <button aria-label="Notifications" className="icon-button" type="button">
             <Icon name="bell" size={19} />
             <span className="notification-dot" />
           </button>
@@ -339,8 +351,7 @@ export function DoctorDashboard({
               <p className="eyebrow">Patient communication</p>
               <h1>Create visit writeup</h1>
               <p className="heading-support">
-                Summarize the visit and send clear next steps to the right
-                people.
+                Summarize the visit and send clear next steps to the right people.
               </p>
             </div>
             <button className="secondary-button" type="button">
@@ -393,9 +404,7 @@ export function DoctorDashboard({
               </div>
               <div className="patient-tags">
                 {selectedPatient.tags.map((tag) => (
-                  <span className="patient-tag" key={tag}>
-                    {tag}
-                  </span>
+                  <span className="patient-tag" key={tag}>{tag}</span>
                 ))}
               </div>
             </div>
@@ -408,166 +417,75 @@ export function DoctorDashboard({
           <div className="content-grid">
             <section className="composer-card">
               <div className="composer-top">
-                <div
-                  className="segmented-control"
-                  role="tablist"
-                  aria-label="Summary input method"
-                >
-                  <button
-                    aria-selected={mode === "write"}
-                    className={mode === "write" ? "segment-active" : ""}
-                    onClick={() => setMode("write")}
-                    role="tab"
-                    type="button"
-                  >
-                    <Icon name="document" size={17} />
-                    Write
-                  </button>
-                  <button
-                    aria-selected={mode === "dictate"}
-                    className={mode === "dictate" ? "segment-active" : ""}
-                    onClick={() => setMode("dictate")}
-                    role="tab"
-                    type="button"
-                  >
-                    <Icon name="microphone" size={17} />
-                    Dictate
-                  </button>
-                  <button
-                    aria-selected={mode === "pdf"}
-                    className={mode === "pdf" ? "segment-active" : ""}
-                    onClick={() => setMode("pdf")}
-                    role="tab"
-                    type="button"
-                  >
-                    <Icon name="pdf" size={17} />
-                    PDF
-                  </button>
-                </div>
+                <span className="composer-title">
+                  <Icon name="document" size={16} />
+                  Visit writeup
+                </span>
                 <span className="autosave">
                   {sending ? "Sending…" : "Autosaves securely"}
                 </span>
               </div>
 
-              {mode === "write" ? (
-                <div className="write-panel">
-                  <label htmlFor="visit-summary">Visit writeup</label>
+              <div className="write-panel">
+                <div className="textarea-wrap">
                   <textarea
                     id="visit-summary"
-                    onChange={(event) => {
-                      setNote(event.target.value)
-                    }}
-                    placeholder="Write a clear summary of the visit, key findings, care instructions, and next steps..."
-                    value={note}
+                    aria-label="Visit writeup"
+                    className={isRecording ? "is-recording-textarea" : ""}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder="Write a summary, dictate using the mic, or upload a PDF using the attach button…"
+                    value={noteText}
                   />
-                  <div className="editor-footer">
-                    <span>{note.length} characters</span>
-                    <span>Last edit just now</span>
-                  </div>
-                </div>
-              ) : mode === "dictate" ? (
-                <div className={`dictation-panel ${isRecording ? "is-recording" : ""}`}>
-                  <div className="waveform" aria-hidden="true">
-                    {[18, 30, 22, 44, 58, 34, 50, 26, 62, 38, 54, 30, 46, 22, 34, 18].map((height, index) => (
-                      <span key={index} style={{ height }} />
-                    ))}
-                  </div>
-                  <p className="recording-label">
-                    {isRecording ? "Listening…" : "Ready to dictate"}
-                  </p>
-                  {(isRecording || transcript) && (
-                    <div className="live-transcript" aria-live="polite">
-                      {transcript || <span className="transcript-placeholder">Waiting for speech…</span>}
-                    </div>
-                  )}
-                  {!isRecording && !transcript && (
-                    <p className="recording-help">
-                      Use your natural speaking voice. The transcript appears live as you speak.
-                    </p>
-                  )}
-                  {transcribeError && <p className="transcript-error">{transcribeError}</p>}
+
+                  {/* Mic button — top right */}
                   <button
                     aria-label={isRecording ? "Stop dictation" : "Start dictation"}
-                    className="record-button"
+                    className={`mic-button ${isRecording ? "mic-active" : ""}`}
                     onClick={isRecording ? stopRecording : startRecording}
+                    title={isRecording ? "Stop dictation" : "Dictate into note"}
                     type="button"
                   >
-                    <span className="record-icon">
-                      <Icon name={isRecording ? "stop" : "microphone"} size={22} />
-                    </span>
-                    <span>{isRecording ? "Stop dictation" : "Start dictation"}</span>
+                    <Icon name={isRecording ? "stop" : "microphone"} size={22} />
                   </button>
-                  <span className="recording-time">
-                    {isRecording ? formattedTime : "Microphone access required"}
+
+                  {/* PDF upload button — below mic */}
+                  <label
+                    aria-label="Upload PDF"
+                    className={`pdf-attach-button ${pdfLoading ? "pdf-attach-loading" : ""}`}
+                    title="Upload a PDF — text will be inserted into the note"
+                  >
+                    <Icon name={pdfLoading ? "clock" : "upload"} size={18} />
+                    <input
+                      accept="application/pdf"
+                      hidden
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePdfFile(f) }}
+                      type="file"
+                    />
+                  </label>
+                </div>
+
+                {pdfError && <p className="transcript-error">⚠ {pdfError}</p>}
+                {transcribeError && <p className="transcript-error">{transcribeError}</p>}
+
+                <div className="editor-footer">
+                  <span>{noteText.length} characters</span>
+                  <span>
+                    {isRecording ? (
+                      <span className="recording-indicator">
+                        <span className="recording-dot" aria-hidden="true" />
+                        Listening… {formattedTime}
+                      </span>
+                    ) : (
+                      "Last edit just now"
+                    )}
                   </span>
                 </div>
-              ) : (
-                <div
-                  className={`pdf-panel ${pdfDragging ? "pdf-dragging" : ""}`}
-                  onDragEnter={(e) => { e.preventDefault(); setPdfDragging(true) }}
-                  onDragLeave={(e) => { e.preventDefault(); setPdfDragging(false) }}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    setPdfDragging(false)
-                    const file = e.dataTransfer.files[0]
-                    if (file?.type === "application/pdf") handlePdfFile(file)
-                  }}
-                >
-                  {pdfFile ? (
-                    <div className="pdf-file-section">
-                      <div className="pdf-selected">
-                        <div className="pdf-icon-wrap"><Icon name="pdf" size={28} /></div>
-                        <div className="pdf-file-info">
-                          <strong>{pdfFile.name}</strong>
-                          <span>{(pdfFile.size / 1024).toFixed(1)} KB{pdfStatus === "done" && ` · ${pdfMessage}`}</span>
-                        </div>
-                        <button
-                          aria-label="Remove PDF"
-                          className="pdf-remove"
-                          onClick={() => { setPdfFile(null); setPdfText(""); setPdfStatus("idle"); setPdfMessage("") }}
-                          type="button"
-                        >✕</button>
-                      </div>
-                      {pdfStatus === "extracting" && <p className="pdf-status extracting">Extracting text…</p>}
-                      {pdfStatus === "scanned" && <p className="pdf-status scanned">⚠ {pdfMessage}</p>}
-                      {pdfStatus === "error" && <p className="pdf-status error">✕ {pdfMessage}</p>}
-                      {pdfStatus === "done" && pdfText && (
-                        <div className="pdf-preview">
-                          <label>Extracted text</label>
-                          <textarea readOnly value={pdfText} aria-label="Extracted PDF text" />
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="pdf-upload-icon"><Icon name="upload" size={26} /></div>
-                      <p className="pdf-upload-label">Drop a PDF here</p>
-                      <p className="pdf-upload-help">
-                        Or click below to browse. We'll extract the relevant visit information automatically.
-                      </p>
-                      <label className="pdf-browse-button">
-                        Browse file
-                        <input
-                          accept="application/pdf"
-                          aria-label="Upload PDF"
-                          hidden
-                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePdfFile(f) }}
-                          type="file"
-                        />
-                      </label>
-                    </>
-                  )}
-                </div>
-              )}
+              </div>
 
               <div className="composer-actions">
-                <button className="tertiary-button" type="button">
-                  Save as draft
-                </button>
                 <button
                   className="secondary-button"
-                  disabled={!activeText}
+                  disabled={!noteText}
                   onClick={handleDownload}
                   type="button"
                 >
@@ -576,7 +494,7 @@ export function DoctorDashboard({
                 </button>
                 <button
                   className="primary-button"
-                  disabled={sending || !activeText}
+                  disabled={sending || !noteText}
                   onClick={handleSend}
                   type="button"
                 >
@@ -607,10 +525,10 @@ export function DoctorDashboard({
                   {checklist.map((item) => (
                     <li key={item.id}>
                       <button
+                        aria-pressed={item.done}
                         className={`checklist-item ${item.done ? "is-done" : ""}`}
                         onClick={() => toggleChecklistItem(item.id)}
                         type="button"
-                        aria-pressed={item.done}
                       >
                         <span className="checklist-box">
                           {item.done ? <Icon name="check" size={14} /> : null}
@@ -623,9 +541,7 @@ export function DoctorDashboard({
               </section>
 
               <section className="side-card">
-                <div className="side-card-head">
-                  <h3>Care team</h3>
-                </div>
+                <div className="side-card-head"><h3>Care team</h3></div>
                 <ul className="team-list">
                   {careTeam.map((member) => (
                     <li className="team-member" key={member.name}>
@@ -640,9 +556,7 @@ export function DoctorDashboard({
               </section>
 
               <section className="side-card">
-                <div className="side-card-head">
-                  <h3>Recent activity</h3>
-                </div>
+                <div className="side-card-head"><h3>Recent activity</h3></div>
                 <ul className="activity-list">
                   {activity.map((entry) => (
                     <li className="activity-item" key={entry.description}>

@@ -2605,3 +2605,127 @@ h1 {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ── Write panel with inline mic ── */
+.textarea-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+}
+
+.textarea-wrap textarea {
+  width: 100%;
+  min-height: 260px;
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: 0;
+  background: var(--surface-raised);
+  color: var(--ink);
+  padding: 17px 52px 17px 17px;
+  font-size: 14px;
+  line-height: 1.75;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.textarea-wrap textarea:focus {
+  border-color: var(--care-teal);
+  box-shadow: 0 0 0 3px rgba(18, 184, 176, 0.18);
+}
+
+.textarea-wrap textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.textarea-wrap textarea.is-recording-textarea {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px rgba(217, 127, 108, 0.18);
+}
+
+.mic-button {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-muted);
+  transition: 160ms ease;
+}
+
+.mic-button:hover {
+  border-color: var(--care-teal-border);
+  background: var(--care-teal-soft);
+  color: var(--deep-teal);
+}
+
+.mic-button.mic-active {
+  border-color: var(--coral);
+  background: var(--coral);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(217, 127, 108, 0.35);
+}
+
+.recording-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--coral-strong);
+  font-weight: 600;
+}
+
+.recording-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--coral);
+  animation: blink-dot 1s ease-in-out infinite;
+}
+
+@keyframes blink-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+/* -- Composer title (replaces segmented control when unified) -- */
+.composer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* -- PDF attach button (sits below mic inside textarea-wrap) -- */
+.pdf-attach-button {
+  position: absolute;
+  top: 64px;
+  right: 14px;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: 160ms ease;
+}
+
+.pdf-attach-button:hover {
+  border-color: var(--care-teal-border);
+  background: var(--care-teal-soft);
+  color: var(--deep-teal);
+}
+
+.pdf-attach-button.pdf-attach-loading {
+  opacity: 0.6;
+  cursor: wait;
+}
