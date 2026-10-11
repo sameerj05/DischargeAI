@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
 import { Icon, BrandMark } from "./ui"
 import { type Session } from "./auth"
+import { useTranscribeMedical } from "./useTranscribeMedical"
+import { extractPdfText } from "./extractPdfText"
 
 type Patient = {
   id: string
@@ -178,13 +180,16 @@ export function DoctorDashboard({
 }) {
   const [mode, setMode] = useState<"write" | "dictate" | "pdf">("write")
   const [note, setNote] = useState("")
-  const [recording, setRecording] = useState(false)
   const [seconds, setSeconds] = useState(0)
-  const [saved, setSaved] = useState(false)
+  const [sending, setSending] = useState(false)
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [pdfDragging, setPdfDragging] = useState(false)
+  const [pdfText, setPdfText] = useState("")
+  const [pdfStatus, setPdfStatus] = useState<"idle" | "extracting" | "done" | "scanned" | "error">("idle")
+  const [pdfMessage, setPdfMessage] = useState("")
   const [selectedPatientId, setSelectedPatientId] = useState(patients[0].id)
   const [checklist, setChecklist] = useState<ChecklistItem[]>(initialChecklist)
+  const { transcript, isRecording, error: transcribeError, start: startRecording, stop: stopRecording } = useTranscribeMedical()
 
   const selectedPatient =
     patients.find((patient) => patient.id === selectedPatientId) ?? patients[0]
@@ -203,22 +208,51 @@ export function DoctorDashboard({
   }
 
   useEffect(() => {
-    if (!recording) return
-    const timer = window.setInterval(
-      () => setSeconds((value) => value + 1),
-      1000,
-    )
+    if (!isRecording) { setSeconds(0); return }
+    const timer = window.setInterval(() => setSeconds((v) => v + 1), 1000)
     return () => window.clearInterval(timer)
-  }, [recording])
+  }, [isRecording])
 
-  const toggleRecording = () => {
-    setRecording((value) => !value)
-    setSaved(false)
+  const formattedTime = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
+
+  const handlePdfFile = async (file: File) => {
+    setPdfFile(file)
+    setPdfText("")
+    setPdfStatus("extracting")
+    setPdfMessage("")
+    const result = await extractPdfText(file)
+    if (result.ok) {
+      setPdfText(result.text)
+      setPdfStatus("done")
+      setPdfMessage(`${result.pages} page${result.pages !== 1 ? "s" : ""} extracted`)
+    } else if (result.reason === "scanned") {
+      setPdfStatus("scanned")
+      setPdfMessage(result.message)
+    } else {
+      setPdfStatus("error")
+      setPdfMessage(result.message)
+    }
   }
 
-  const formattedTime = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(
-    seconds % 60,
-  ).padStart(2, "0")}`
+  const activeText = mode === "write" ? note : mode === "dictate" ? transcript : pdfText
+
+  const handleDownload = () => {
+    if (!activeText) return
+    const blob = new Blob([activeText], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "visit-writeup.txt"
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleSend = () => {
+    if (!activeText || sending) return
+    setSending(true)
+    // Simulate send — replace with real API call later
+    setTimeout(() => setSending(false), 2000)
+  }
 
   return (
     <div className="app-shell">
@@ -401,7 +435,7 @@ export function DoctorDashboard({
                   </button>
                 </div>
                 <span className="autosave">
-                  {saved ? "Writeup sent" : "Autosaves securely"}
+                  {sending ? "Sending…" : "Autosaves securely"}
                 </span>
               </div>
 
@@ -412,7 +446,6 @@ export function DoctorDashboard({
                     id="visit-summary"
                     onChange={(event) => {
                       setNote(event.target.value)
-                      setSaved(false)
                     }}
                     placeholder="Write a clear summary of the visit, key findings, care instructions, and next steps..."
                     value={note}
@@ -423,47 +456,39 @@ export function DoctorDashboard({
                   </div>
                 </div>
               ) : mode === "dictate" ? (
-                <div
-                  className={`dictation-panel ${
-                    recording ? "is-recording" : ""
-                  }`}
-                >
+                <div className={`dictation-panel ${isRecording ? "is-recording" : ""}`}>
                   <div className="waveform" aria-hidden="true">
-                    {[
-                      18, 30, 22, 44, 58, 34, 50, 26, 62, 38, 54, 30, 46, 22,
-                      34, 18,
-                    ].map((height, index) => (
+                    {[18, 30, 22, 44, 58, 34, 50, 26, 62, 38, 54, 30, 46, 22, 34, 18].map((height, index) => (
                       <span key={index} style={{ height }} />
                     ))}
                   </div>
                   <p className="recording-label">
-                    {recording ? "Listening…" : "Ready to dictate"}
+                    {isRecording ? "Listening…" : "Ready to dictate"}
                   </p>
-                  <p className="recording-help">
-                    {recording
-                      ? "Speak naturally. Your transcript will appear here when you finish."
-                      : "Use your natural speaking voice. You can review and edit the transcript before saving."}
-                  </p>
+                  {(isRecording || transcript) && (
+                    <div className="live-transcript" aria-live="polite">
+                      {transcript || <span className="transcript-placeholder">Waiting for speech…</span>}
+                    </div>
+                  )}
+                  {!isRecording && !transcript && (
+                    <p className="recording-help">
+                      Use your natural speaking voice. The transcript appears live as you speak.
+                    </p>
+                  )}
+                  {transcribeError && <p className="transcript-error">{transcribeError}</p>}
                   <button
-                    aria-label={
-                      recording ? "Stop dictation" : "Start dictation"
-                    }
+                    aria-label={isRecording ? "Stop dictation" : "Start dictation"}
                     className="record-button"
-                    onClick={toggleRecording}
+                    onClick={isRecording ? stopRecording : startRecording}
                     type="button"
                   >
                     <span className="record-icon">
-                      <Icon
-                        name={recording ? "stop" : "microphone"}
-                        size={22}
-                      />
+                      <Icon name={isRecording ? "stop" : "microphone"} size={22} />
                     </span>
-                    <span>
-                      {recording ? "Stop dictation" : "Start dictation"}
-                    </span>
+                    <span>{isRecording ? "Stop dictation" : "Start dictation"}</span>
                   </button>
                   <span className="recording-time">
-                    {recording ? formattedTime : "Microphone access required"}
+                    {isRecording ? formattedTime : "Microphone access required"}
                   </span>
                 </div>
               ) : (
@@ -476,39 +501,40 @@ export function DoctorDashboard({
                     e.preventDefault()
                     setPdfDragging(false)
                     const file = e.dataTransfer.files[0]
-                    if (file?.type === "application/pdf") {
-                      setPdfFile(file)
-                      setSaved(false)
-                    }
+                    if (file?.type === "application/pdf") handlePdfFile(file)
                   }}
                 >
                   {pdfFile ? (
-                    <div className="pdf-selected">
-                      <div className="pdf-icon-wrap">
-                        <Icon name="pdf" size={28} />
+                    <div className="pdf-file-section">
+                      <div className="pdf-selected">
+                        <div className="pdf-icon-wrap"><Icon name="pdf" size={28} /></div>
+                        <div className="pdf-file-info">
+                          <strong>{pdfFile.name}</strong>
+                          <span>{(pdfFile.size / 1024).toFixed(1)} KB{pdfStatus === "done" && ` · ${pdfMessage}`}</span>
+                        </div>
+                        <button
+                          aria-label="Remove PDF"
+                          className="pdf-remove"
+                          onClick={() => { setPdfFile(null); setPdfText(""); setPdfStatus("idle"); setPdfMessage("") }}
+                          type="button"
+                        >✕</button>
                       </div>
-                      <div className="pdf-file-info">
-                        <strong>{pdfFile.name}</strong>
-                        <span>{(pdfFile.size / 1024).toFixed(1)} KB</span>
-                      </div>
-                      <button
-                        aria-label="Remove PDF"
-                        className="pdf-remove"
-                        onClick={() => setPdfFile(null)}
-                        type="button"
-                      >
-                        ✕
-                      </button>
+                      {pdfStatus === "extracting" && <p className="pdf-status extracting">Extracting text…</p>}
+                      {pdfStatus === "scanned" && <p className="pdf-status scanned">⚠ {pdfMessage}</p>}
+                      {pdfStatus === "error" && <p className="pdf-status error">✕ {pdfMessage}</p>}
+                      {pdfStatus === "done" && pdfText && (
+                        <div className="pdf-preview">
+                          <label>Extracted text</label>
+                          <textarea readOnly value={pdfText} aria-label="Extracted PDF text" />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
-                      <div className="pdf-upload-icon">
-                        <Icon name="upload" size={26} />
-                      </div>
+                      <div className="pdf-upload-icon"><Icon name="upload" size={26} /></div>
                       <p className="pdf-upload-label">Drop a PDF here</p>
                       <p className="pdf-upload-help">
-                        Or click below to browse. We'll extract the relevant
-                        visit information automatically.
+                        Or click below to browse. We'll extract the relevant visit information automatically.
                       </p>
                       <label className="pdf-browse-button">
                         Browse file
@@ -516,13 +542,7 @@ export function DoctorDashboard({
                           accept="application/pdf"
                           aria-label="Upload PDF"
                           hidden
-                          onChange={(e) => {
-                            const file = e.target.files?.[0]
-                            if (file) {
-                              setPdfFile(file)
-                              setSaved(false)
-                            }
-                          }}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePdfFile(f) }}
                           type="file"
                         />
                       </label>
@@ -536,12 +556,22 @@ export function DoctorDashboard({
                   Save as draft
                 </button>
                 <button
+                  className="secondary-button"
+                  disabled={!activeText}
+                  onClick={handleDownload}
+                  type="button"
+                >
+                  <Icon name="download" size={16} />
+                  Download .txt
+                </button>
+                <button
                   className="primary-button"
-                  onClick={() => setSaved(true)}
+                  disabled={sending || !activeText}
+                  onClick={handleSend}
                   type="button"
                 >
                   <Icon name="send" size={16} />
-                  {saved ? "Sent" : "Send writeup"}
+                  {sending ? "Sent" : "Send writeup"}
                 </button>
               </div>
             </section>
