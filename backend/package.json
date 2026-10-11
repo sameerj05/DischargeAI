@@ -1,14 +1,54 @@
 {
   "name": "dischargeai-backend",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
+  "description": "DischargeAI backend: discharge summaries in, plain-language patient links out, data self-destructs at 30 days.",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "dev": "node --watch src/index.js",
-    "start": "node src/index.js"
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "sweep": "tsx scripts/sweep.ts",
+    "check-sql": "tsx scripts/check-sql.ts",
+    "fetch-rds-bundle": "sh scripts/fetch-rds-bundle.sh",
+    "show-audit": "tsx scripts/show-audit.ts",
+    "setup-dynamo": "tsx scripts/setup-dynamo.ts",
+    "setup-s3": "tsx scripts/setup-s3.ts",
+    "ensure-s3-lifecycle": "tsx scripts/ensure-s3-lifecycle.ts",
+    "email-worker": "tsx scripts/email-worker.ts",
+    "docs": "tsx scripts/swagger-docs.ts"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "@aws-sdk/client-bedrock-agentcore": "^3.1149.0",
+    "@aws-sdk/client-dynamodb": "^3.1149.0",
+    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/client-secrets-manager": "^3.1149.0",
+    "@aws-sdk/client-sesv2": "^3.1149.0",
+    "@aws-sdk/client-sqs": "^3.1149.0",
+    "@aws-sdk/client-transcribe": "^3.1149.0",
+    "@aws-sdk/lib-dynamodb": "^3.1149.0",
+    "express": "^5.3.0",
+    "multer": "^2.4.0",
+    "mysql2": "^3.24.5",
+    "nodemailer": "^10.1.0",
+    "p-queue": "^9.3.3",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^6.4.299",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^24.19.2",
+    "@types/swagger-ui-express": "^4.1.8",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }
