@@ -5,6 +5,7 @@ import { AppError } from "../errors.js";
 import { resolveSummary, summaryBody } from "./linkAccess.js";
 import { adaptSummary } from "../../../frontend/src/planAdapter.js";
 import { speechTextFor } from "../../../frontend/src/speechText.js";
+import { translatedPlanFor } from "../pipeline/agentTranslation.js";
 
 const Body = z.object({ token: z.string(), language: z.enum(["en", "es", "zh", "ar"]), text: z.string().trim().min(1).max(5000) });
 export function readAloudRouter(ctx: AppContext) {
@@ -15,7 +16,7 @@ export function readAloudRouter(ctx: AppContext) {
     const access = await resolveSummary(ctx, token);
     const body = await summaryBody(ctx, access, "read-aloud");
     const plan = language === "en" ? adaptSummary(body).record.byLang.en
-      : access.item.translations?.[language]?.plan;
+      : translatedPlanFor(access.llmSummary, language)?.plan;
     if (!plan) throw new AppError(409, "plan_language_unavailable", "Load the plan in this language before reading it aloud");
     // Only a displayed section (or its playback chunk) may be sent to ElevenLabs.
     const strings = Object.values(speechTextFor(plan, language));

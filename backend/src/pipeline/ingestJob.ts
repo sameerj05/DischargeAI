@@ -104,7 +104,6 @@ export async function synthesizeLink(ctx: AppContext, link: ActiveLink, text: st
     "sum-id": link.sumId,
     status: "ready",
     inputKind,
-    translations: {},
     meta: { ...(current?.meta ?? {}), provider: ctx.agent.name, agentRuntimeArn: ctx.agent.runtimeArn, latencyMs: run.latencyMs, sourceChars: text.length },
   });
   await activeLinks.setStatus(link.sumId, "ready");

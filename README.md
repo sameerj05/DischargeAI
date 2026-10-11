@@ -29,9 +29,9 @@ Local mode uses SQLite in memory, production repositories/routes/job processing,
 
 ## Generate a real plan with local storage
 
-`npm run local:ai` loads the ignored `backend/.env` and connects the original frontend to live AgentCore, Transcribe Medical streaming dictation, the existing AI-Infra patient translation agent, and ElevenLabs. Patient records, notes, plans, translated caches, and app file bytes persist locally in `.local-data/dischargeai.sqlite`. The app does not use the team's DynamoDB table or database secret. The microphone streams audio through the backend and requires no S3 bucket; AWS credentials stay server-side. The separate batch audio API can still use HealthScribe with a private S3 staging bucket. Emails remain captured locally.
+`npm run local:ai` loads the ignored `backend/.env` and connects the original frontend to live AgentCore, Transcribe Medical streaming dictation, the existing AI-Infra patient translation agent, and ElevenLabs. Patient records, notes, plans, translated caches, and app file bytes persist locally in `.local-data/dischargeai.sqlite`. The app does not use the team's DynamoDB table or database secret. The microphone streams audio through the backend and requires no S3 bucket; AWS credentials stay server-side. Emails remain captured locally.
 
-The current environment uses the authorized hackathon account **958824257887**: AgentCore and translation in **us-west-2**, HealthScribe in **us-east-1**. The supplied temporary AWS credentials and ElevenLabs key are stored only in ignored `backend/.env`; they are never sent to the frontend. Refresh the AWS variables there when the session expires. The ElevenLabs key needs text-to-speech permission; listing voices is optional.
+AWS access uses the machine's default credentials (local profile, or the instance role on the server); no AWS keys are stored in `backend/.env` or sent to the frontend. The ElevenLabs key, when used, lives only in ignored `backend/.env` and needs text-to-speech permission; listing voices is optional.
 
 ```powershell
 npm run build
@@ -48,7 +48,7 @@ Open **http://127.0.0.1:4000**; doctor login is **rivera@demo.health / demo1234*
 
 Local data survives restarts in this mode. Read access expires exactly 30 days after the original plan was created; a local sweep deletes expired plan documents and file bytes at startup and every minute. Patient registration rows remain available for later visits. The automated agent verdict is not a human clinical review.
 
-Live dictation defaults to `TRANSCRIBE_STREAMING_REGION=us-east-1` and requires `transcribe:StartMedicalStreamTranscription` permission. It is independent of `SPEECH_PROVIDER`, which selects the batch audio API. Provider failures appear in the editor and retain your displayed draft. Streaming transcripts can revise words until finalized; review the final text before sending.
+Live dictation defaults to `TRANSCRIBE_STREAMING_REGION=us-west-2` and requires `transcribe:StartMedicalStreamTranscription` permission. Provider failures appear in the editor and retain your displayed draft. Streaming transcripts can revise words until finalized; review the final text before sending.
 
 For an opt-in speech-only browser check, run `npm run test:dictation:live`. It loads `backend/.env`, starts an isolated local app, and uses the synthetic WAV at `.tools/healthscribe-test.wav` (or `LIVE_TEST_AUDIO`) as a fake microphone. It verifies actual AWS partial results updating the textarea during recording, final transcription and editing after stop. The ignored evidence is `.tools/dictation-live-report.json` and `.tools/dictation-live-recording.png`. Only real speech calls are made; plan generation uses fixtures.
 

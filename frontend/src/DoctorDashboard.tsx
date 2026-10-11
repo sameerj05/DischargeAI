@@ -1,90 +1,25 @@
 ﻿import { useEffect, useRef, useState } from "react"
 import { Icon, BrandMark } from "./ui"
 import { type Session } from "./auth"
-import { useTranscribeMedical } from "./useTranscribeMedical"
+import { useLiveDictation } from "./useLiveDictation"
 import { extractPdfText } from "./extractPdfText"
-import { postIngest } from "./api"
+import { getPatients, postIngest, waitForJob, PROVIDER_KEY, type ContractPatient } from "./api"
 
 type Patient = {
   id: string
   name: string
   initials: string
-  age: number
-  mrn: string
-  visit: string
-  status: string
-  physician: string
-  admittedDate: string
-  tags: string[]
+  dob?: string
+  age?: number
 }
 
-const patients: Patient[] = [
-  {
-    id: "p1",
-    name: "Elena Martinez",
-    initials: "EM",
-    age: 48,
-    mrn: "034821",
-    visit: "Follow-up visit",
-    status: "In progress",
-    physician: "Dr. A. Rivera",
-    admittedDate: "Admitted Mar 2",
-    tags: ["Hypertension", "Post-op day 3"],
-  },
-  {
-    id: "p2",
-    name: "James Carter",
-    initials: "JC",
-    age: 63,
-    mrn: "029145",
-    visit: "Post-op discharge",
-    status: "Ready",
-    physician: "Dr. L. Okafor",
-    admittedDate: "Admitted Feb 28",
-    tags: ["Knee replacement", "Diabetes"],
-  },
-  {
-    id: "p3",
-    name: "Priya Nair",
-    initials: "PN",
-    age: 35,
-    mrn: "041203",
-    visit: "New consult",
-    status: "Draft",
-    physician: "Dr. A. Rivera",
-    admittedDate: "Admitted Mar 4",
-    tags: ["Asthma", "Pregnancy"],
-  },
-  {
-    id: "p4",
-    name: "Robert Chen",
-    initials: "RC",
-    age: 71,
-    mrn: "017880",
-    visit: "Medication review",
-    status: "Ready",
-    physician: "Dr. S. Mehta",
-    admittedDate: "Admitted Mar 1",
-    tags: ["Atrial fibrillation", "CKD stage 2"],
-  },
-  {
-    id: "p5",
-    name: "Aisha Johnson",
-    initials: "AJ",
-    age: 29,
-    mrn: "052674",
-    visit: "Follow-up visit",
-    status: "Draft",
-    physician: "Dr. L. Okafor",
-    admittedDate: "Admitted Mar 5",
-    tags: ["Migraine", "Anemia"],
-  },
-]
-
-function statusClass(status: string) {
-  if (status === "Ready") return "status-pill status-ready"
-  if (status === "In progress") return "status-pill status-progress"
-  return "status-pill status-draft"
+function toPatient(row: ContractPatient): Patient {
+  const id = String(row.ID)
+  const name = [row.FirstName, row.LastName].filter(Boolean).join(" ") || `Patient ${id}`
+  const dob = row.DOB?.slice(0, 10) || undefined
+  const born = dob ? new Date(`${dob}T00:00:00Z`) : undefined
+  const age = born && !Number.isNaN(born.getTime()) ? Math.floor((Date.now() - born.getTime()) / 31_557_600_000) : undefined
+  return { id, name, initials: initialsFrom(name), dob, age }
 }
 
 type Stat = { label: string; value: string; hint: string; highlight?: boolean }
@@ -162,18 +97,32 @@ export function DoctorDashboard({
 }) {
   // Map of patientId -> note so switching patients preserves each writeup
   const [notes, setNotes] = useState<Record<string, PatientNote>>({})
-  const [selectedPatientId, setSelectedPatientId] = useState(patients[0].id)
   const [searchQuery, setSearchQuery] = useState("")
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [patientsLoading, setPatientsLoading] = useState(true)
+  const [patientsError, setPatientsError] = useState<string | null>(null)
+  const [selectedPatientId, setSelectedPatientId] = useState(patients[0]?.id ?? "")
+  const [sendResult, setSendResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [seconds, setSeconds] = useState(0)
   const [sending, setSending] = useState(false)
   const [checklist, setChecklist] = useState<ChecklistItem[]>(initialChecklist)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
 
-  const { transcript, isRecording, error: transcribeError, start: startRecording, stop: stopRecording } = useTranscribeMedical()
+  // The hook reports the full dictated text so far; it is appended after what was already in the note.
+  const dictationDraft = useRef({ patientId: "", prefix: "" })
+  const { isRecording, error: transcribeError, start: startRecording, stop: stopRecording } = useLiveDictation(PROVIDER_KEY, (text) => {
+    const { patientId, prefix } = dictationDraft.current
+    setNotes((prev) => ({ ...prev, [patientId]: { text: prefix + text, inputType: "dictation" } }))
+  })
 
   const currentNote = notes[selectedPatientId] ?? emptyNote()
   const noteText = currentNote.text
+
+  const handleStartDictation = () => {
+    dictationDraft.current = { patientId: selectedPatientId, prefix: noteText ? noteText.trimEnd() + "\n\n" : "" }
+    void startRecording()
+  }
 
   const setNoteText = (text: string, inputType?: PatientNote["inputType"]) => {
     setNotes((prev) => ({
@@ -189,37 +138,26 @@ export function DoctorDashboard({
   const handleSelectPatient = (id: string) => {
     if (isRecording) stopRecording()
     setPdfError(null)
+    setSendResult(null)
     setSelectedPatientId(id)
   }
 
-  // Append confirmed transcript words into the current patient note
-  const prevTranscriptRef = useRef("")
   useEffect(() => {
-    if (transcript && transcript !== prevTranscriptRef.current) {
-      const newWords = transcript.slice(prevTranscriptRef.current.length).trimStart()
-      if (newWords) {
-        setNotes((prev) => {
-          const cur = prev[selectedPatientId] ?? emptyNote()
-          return {
-            ...prev,
-            [selectedPatientId]: {
-              text: cur.text ? cur.text + " " + newWords : newWords,
-              inputType: "dictation",
-            },
-          }
-        })
-      }
-      prevTranscriptRef.current = transcript
-    }
-  }, [transcript, selectedPatientId])
+    getPatients(PROVIDER_KEY)
+      .then((rows) => {
+        const list = rows.map(toPatient)
+        setPatients(list)
+        setSelectedPatientId(list[0]?.id ?? "")
+      })
+      .catch((err) => setPatientsError(err instanceof Error ? err.message : "Could not load patients"))
+      .finally(() => setPatientsLoading(false))
+  }, [])
 
-  // Reset transcript ref when patient changes so old words don't bleed in
-  useEffect(() => {
-    prevTranscriptRef.current = ""
-  }, [selectedPatientId])
-
-  const selectedPatient =
-    patients.find((p) => p.id === selectedPatientId) ?? patients[0]
+  const selectedPatient: Patient = patients.find((p) => p.id === selectedPatientId) ?? {
+    id: "",
+    name: patientsLoading ? "Loading patients…" : "No patient selected",
+    initials: "–",
+  }
 
   // Filter the sidebar patient list by the top-bar search (name or MRN)
   const query = searchQuery.trim().toLowerCase()
@@ -280,16 +218,18 @@ export function DoctorDashboard({
   }
 
   const handleSend = async () => {
-    if (!noteText || sending) return
+    if (!noteText || sending || !selectedPatient.id) return
     setSending(true)
+    setSendResult(null)
     try {
-      await postIngest({
-        data: noteText,
-        type: currentNote.inputType,
-        patientId: selectedPatient.id,
-      })
+      const accepted = await postIngest({ data: noteText, patientId: selectedPatient.id, DOB: selectedPatient.dob }, PROVIDER_KEY)
+      const base = accepted.appended ? "Notes added to the active plan. Preparing the updated plan…" : "Writeup sent. Preparing the plan…"
+      setSendResult({ ok: true, text: `${base} ${accepted.message} with summaryID: ${accepted.sumId}. The patient will be sent the link ${accepted.link} when ready` })
+      void waitForJob(accepted.jobId, PROVIDER_KEY)
+        .then(() => setSendResult({ ok: true, text: `Plan ready. Patient link: ${accepted.link}` }))
+        .catch((err) => setSendResult({ ok: false, text: err instanceof Error ? err.message : "Plan preparation failed" }))
     } catch (err) {
-      console.error("[ingest] Failed to send:", err)
+      setSendResult({ ok: false, text: err instanceof Error ? err.message : "Could not send the writeup" })
     } finally {
       setSending(false)
     }
@@ -402,31 +342,21 @@ export function DoctorDashboard({
             <div className="patient-info">
               <div className="patient-name-row">
                 <h2>{selectedPatient.name}</h2>
-                <span className={statusClass(selectedPatient.status)}>
-                  {selectedPatient.status}
-                </span>
               </div>
               <div className="patient-meta">
-                <span>{selectedPatient.age} years</span>
-                <i />
-                <span>MRN {selectedPatient.mrn}</span>
-                <i />
-                <span>{selectedPatient.visit}</span>
+                {selectedPatient.age !== undefined && (
+                  <>
+                    <span>{selectedPatient.age} years</span>
+                    <i />
+                  </>
+                )}
+                <span>{selectedPatient.id ? `ID ${selectedPatient.id}` : ""}</span>
               </div>
               <div className="patient-detail-row">
                 <span className="patient-detail">
                   <Icon name="stethoscope" size={14} />
-                  {selectedPatient.physician}
+                  {session.displayName}
                 </span>
-                <span className="patient-detail">
-                  <Icon name="calendar" size={14} />
-                  {selectedPatient.admittedDate}
-                </span>
-              </div>
-              <div className="patient-tags">
-                {selectedPatient.tags.map((tag) => (
-                  <span className="patient-tag" key={tag}>{tag}</span>
-                ))}
               </div>
             </div>
           </section>
@@ -458,7 +388,8 @@ export function DoctorDashboard({
                   <button
                     aria-label={isRecording ? "Stop dictation" : "Start dictation"}
                     className={`mic-button ${isRecording ? "mic-active" : ""}`}
-                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={!selectedPatient.id}
+                    onClick={isRecording ? stopRecording : handleStartDictation}
                     title={isRecording ? "Stop dictation" : "Dictate into note"}
                     type="button"
                   >
@@ -499,6 +430,11 @@ export function DoctorDashboard({
                 </div>
               </div>
 
+              {patientsError && <p className="transcript-error">{patientsError}</p>}
+              {sendResult && (
+                <p className={sendResult.ok ? "heading-support" : "transcript-error"} role="status">{sendResult.text}</p>
+              )}
+
               <div className="composer-actions">
                 <button
                   className="secondary-button"
@@ -511,12 +447,12 @@ export function DoctorDashboard({
                 </button>
                 <button
                   className="primary-button"
-                  disabled={sending || !noteText}
+                  disabled={sending || !noteText || !selectedPatient.id}
                   onClick={handleSend}
                   type="button"
                 >
                   <Icon name="send" size={16} />
-                  {sending ? "Sent" : "Send writeup"}
+                  {sending ? "Sending…" : "Send writeup"}
                 </button>
               </div>
             </section>

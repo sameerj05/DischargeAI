@@ -450,7 +450,6 @@ components:
                 - transcribe
                 - local-fixture
                 - unavailable
-                - healthscribe
             sqlConnection:
               type: string
               description: The RDS connection
@@ -731,9 +730,6 @@ paths:
         active 30-day plan. The link and original expiry remain unchanged;
         appended notes regenerate the plan and clear translated caches. Omit DOB
         for the legacy independent-plan API. Expired plans start a new period.
-        Configured HealthScribe stages audio temporarily in its own private S3
-        bucket before calling AgentCore; local database and app file storage
-        stay local. HealthScribe supports English doctor dictation.
       requestBody:
         required: true
         content:
@@ -968,23 +964,17 @@ paths:
       responses:
         "200":
           description: English source or translatedPlan with translationStatus and
-            translationProblems; cached per plan revision
+            translationProblems, taken from the agent's stored response
         "400":
           description: Unsupported language or invalid bearer link
         "404":
-          description: Unknown plan
-        "409":
-          description: Plan changed during translation; retry
+          description: Unknown plan, or no translation for that language
         "410":
           description: Expired plan
-        "422":
-          description: Unrecognized plan format
         "425":
           description: Plan processing
         "500":
-          description: Translation agent failed
-        "501":
-          description: Translator not configured
+          description: Plan generation failed
   /summary:
     get:
       tags:
@@ -1034,23 +1024,17 @@ paths:
       responses:
         "200":
           description: English source or translatedPlan with translationStatus and
-            translationProblems; cached per plan revision
+            translationProblems, taken from the agent's stored response
         "400":
           description: Unsupported language or invalid bearer link
         "404":
-          description: Unknown plan
-        "409":
-          description: Plan changed during translation; retry
+          description: Unknown plan, or no translation for that language
         "410":
           description: Expired plan
-        "422":
-          description: Unrecognized plan format
         "425":
           description: Plan processing
         "500":
-          description: Translation agent failed
-        "501":
-          description: Translator not configured
+          description: Plan generation failed
   /p/{token}:
     get:
       tags:

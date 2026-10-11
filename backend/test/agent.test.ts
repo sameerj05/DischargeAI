@@ -34,8 +34,8 @@ test("the backend's AWS request matches the AI-Infra entrypoint and deployed run
     const deployed = JSON.parse(readFileSync(join(root, "agentcore", ".cli", "deployed-state.json"), "utf8"));
     assert.equal(loadConfig({}).AGENT_RUNTIME_ARN, deployed.targets.default.resources.runtimes.DischargeAI.runtimeArn);
     const config = JSON.parse(readFileSync(join(root, "agentcore", "agentcore.json"), "utf8"));
-    assert.equal(config.runtimes[0].entrypoint, "agentcore_app.py");
-    assert.match(readFileSync(join(root, "agentcore_app.py"), "utf8"), /payload\.get\("notes"\)/);
+    assert.equal(config.runtimes[0].entrypoint, "agent.py");
+    assert.match(readFileSync(join(root, "agent.py"), "utf8"), /payload\.get\("notes"\)/);
     await assert.rejects(h.agent.invoke("Clinician notes", "short"), /at least 33/);
     assert.equal(h.requests.length, 1, "short sessions never reach AWS");
   } finally { h.client.destroy(); }

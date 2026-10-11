@@ -22,11 +22,10 @@ import { JobQueue } from "../../src/pipeline/queue.js";
 import type { AgentProvider } from "../../src/pipeline/agent.js";
 import type { Config } from "../../src/config.js";
 import type { SpeechToText } from "../../src/pipeline/types.js";
-import type { TranslationProvider } from "../../src/pipeline/translation.js";
 import type { ReadAloudProvider } from "../../src/pipeline/readAloud.js";
 import type { LiveDictationProvider } from "../../src/pipeline/liveDictation.js";
 
-export interface LocalProviders { agent?: AgentProvider; speech?: SpeechToText; liveDictation?: LiveDictationProvider; translator?: TranslationProvider; readAloud?: ReadAloudProvider; config?: Partial<Config>; dataDir?: string }
+export interface LocalProviders { agent?: AgentProvider; speech?: SpeechToText; liveDictation?: LiveDictationProvider; readAloud?: ReadAloudProvider; config?: Partial<Config>; dataDir?: string }
 
 export const LOCAL_PROVIDER_KEY = "local-test-key";
 export const LOCAL_AUDIO_TRANSCRIPT = "Synthetic audio transcript for local workflow testing. This is a fixed fixture, not recognized speech.";
@@ -87,7 +86,7 @@ class SqliteSummaries implements SummaryStore {
     const fields = Object.entries(patch).filter(([, value]) => value !== undefined);
     if (!fields.length) return;
     const expressions = fields.map(() => "?, json(?)").join(", ");
-    const params = fields.flatMap(([key, value]) => [key === "translations" ? '$.translations' : '$."' + key + '"', JSON.stringify(value)!]);
+    const params = fields.flatMap(([key, value]) => [`$."${key}"`, JSON.stringify(value)!]);
     const result = await this.db.run(`UPDATE local_summaries SET item = json_set(item, ${expressions}) WHERE uid = ?`, [...params, uid]);
     if (!result.changes) throw new Error("local summary missing");
   }
@@ -179,7 +178,7 @@ export async function createLocalContext(opts: LocalProviders & { port?: number;
         return { response: fixtureResponse(notes), sessionId, latencyMs: Date.now() - started };
       },
     },
-    translator: opts.translator, readAloud: opts.readAloud,
+    readAloud: opts.readAloud,
     liveDictation: opts.liveDictation ?? (opts.agent ? undefined : {
       name: "local-fixture",
       async *transcribe(audio, _sampleRate, signal) {

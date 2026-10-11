@@ -32,7 +32,7 @@ test("the hybrid HTTP pipeline stores the SDK response and invokes no local AI f
     const health = await (await fetch(local.origin + "/api/health")).json();
     assert.equal(health.mode, "local-agentcore"); assert.equal(health.providers.llm, "agentcore");
     assert.equal(health.providers.docStore, "memory"); assert.equal(health.providers.pdf, "in-memory PDF files (local test only)");
-    assert.deepEqual(health.capabilities, { liveAi: true, dictation: false, translation: false, readAloud: false });
+    assert.deepEqual(health.capabilities, { liveAi: true, dictation: false, translation: true, readAloud: false });
     assert.equal((await fetch(local.origin + "/api/auth/login", post({ email: "rivera@demo.health", password: "demo1234" }))).status, 200);
     const notes = "Synthetic heart failure notes. Furosemide 40 mg once daily.";
     const acceptedResponse = await fetch(local.origin + "/api/ingest", post({ patientID: "7", type: "text", data: notes }));

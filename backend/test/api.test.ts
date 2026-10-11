@@ -163,8 +163,8 @@ test("every OpenAPI operation is checked against real HTTP routes and SQL reposi
       const saved = await call("/synthesize", 200, post({ linkId: text.sumId }));
       assert.equal(saved.stored, true); assert.equal(saved.emailed, true); assert.equal(h.outbox.length, 6);
     });
-    await t.test("both translation routes explicitly report unimplemented", async () => {
-      for (const path of ["/translation", "/translate"]) assert.equal((await call(`${path}?lang=es&sum_id=${text.sumId}`, 501)).error, "not_implemented");
+    await t.test("both translation routes answer 404 when the stored plan has no translation", async () => {
+      for (const path of ["/translation", "/translate"]) assert.equal((await call(`${path}?lang=es&sum_id=${text.sumId}`, 404)).error, "translation_unavailable");
     });
     await t.test("agent failures persist a failed job and send no email", async () => {
       failed = await call("/ingest", 202, post({ patientID: "7", type: "text", data: LOCAL_FAILURE_MARKER }));

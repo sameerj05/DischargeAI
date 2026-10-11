@@ -11,7 +11,7 @@
     {
       "name": "DischargeAI",
       "build": "CodeZip",
-      "entrypoint": "agentcore_app.py",
+      "entrypoint": "agent.py",
       "codeLocation": "./",
       "runtimeVersion": "PYTHON_3_14",
       "networkMode": "PUBLIC",

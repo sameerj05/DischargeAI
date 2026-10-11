@@ -112,7 +112,7 @@ export function ingestRouter(ctx: AppContext): Router {
         }
       }
       const job = await ctx.jobs.create({ sumId: active.sumId, inputKind: parsed.kind, now: ctx.clock.nowIso(), meta: { appended: true, inputBytes: parsed.file?.buffer.length ?? Buffer.byteLength(text ?? "", "utf8"), mimeType: parsed.file?.mimeType } });
-      await ctx.summaries.update(active.sumId, { "raw-text": combined, status: "processing", translations: {}, inputKind: parsed.kind, ...(pdfKey ? { pdfKey } : {}), ...(audioKey ? { audioKey } : {}) });
+      await ctx.summaries.update(active.sumId, { "raw-text": combined, status: "processing", inputKind: parsed.kind, ...(pdfKey ? { pdfKey } : {}), ...(audioKey ? { audioKey } : {}) });
       await ctx.activeLinks.setStatus(active.sumId, "pending");
       await ctx.audit.append({ event: "link.appended", sumId: active.sumId, actor: "provider", at: ctx.clock.nowIso(), details: { jobId: job.id } });
       res.status(202).json({ statusCode: 202, message: "information appended", appended: true, sumId: active.sumId, jobId: job.id, link: ctx.patientUrl(active.sumId), expiresAt: active.expiresAt });

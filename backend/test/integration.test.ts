@@ -135,7 +135,7 @@ test("the backend HTTP contract runs through the real routes, ingest pipeline, a
     assert.equal(JSON.stringify(plan).includes("private source quote"), false);
     assert.equal(adapted.record.expiresAt, ingest.expiresAt); assert.equal(adapted.flags[0], "Confirm follow-up date");
     for (const path of ["/translation", "/translate"]) {
-      const translate = await nativeFetch(`${origin}/api${path}?lang=es&sum_id=${ingest.sumId}`); assert.equal(translate.status, 501);
+      const translate = await nativeFetch(`${origin}/api${path}?lang=es&sum_id=${ingest.sumId}`); assert.equal(translate.status, 404);
     }
     const audio = await postAudio(new Blob(["synthetic audio"], { type: "audio/webm" }), "7", "dev-provider-key");
     await runIngestJob(h.ctx, audio.jobId, h.pending.get(audio.jobId));

@@ -567,8 +567,7 @@
                 "enum": [
                   "transcribe",
                   "local-fixture",
-                  "unavailable",
-                  "healthscribe"
+                  "unavailable"
                 ]
               },
               "sqlConnection": {
@@ -927,7 +926,7 @@
           }
         ],
         "summary": "Task 3 of the backend tasks doc: ingest a discharge summary for a patient; 202 before the agent runs",
-        "description": "JSON body { data, type, patientID } (the tasks doc). type \"text\": data is the discharge summary text.\ntype \"pdf\": data is the PDF as base64 (a data:application/pdf;base64, prefix is accepted); the PDF is\nconverted with pdfToText and stored in S3 emrpdf-rh as \u003csumId>.pdf. Any other type answers\n400 { statusCode: 400, message: \"type must be text or pdf\" }.\nThe random path (sumId) is stored in the SQL activeLinks table and is the DynamoDB uid of the summary\nitem. Before the response, a PDF is converted with pdfToText (a PDF with no readable text answers 400\nunreadable_pdf and nothing is saved) and the text, pasted or extracted, is saved on the item as raw-text.\nThe response comes at once; then, asynchronously: the text goes to the DischargeAI agent on AgentCore\n(session id = the sumId) and the call is awaited (it can take minutes), the agent's whole response is\nsaved as llm-summary with sum-id on the same item (expiresAt = now + 30 days), and the link is emailed\nto the patient's email and to caregiverEmail whatever status the agent gave. Nothing is translated.\nThe earlier multipart form (patientId + one of text, file, audio) is kept as an alias; audio comes from\nthe architecture diagram and goes to S3 emraudio-rh.\nThe opt-in local-agentcore mode uses local stores and captured email instead of AWS storage/email.\nAudio returns 501 when no live speech provider is configured.\n\nSend DOB with patientID to validate the identity and append to the active 30-day plan. The link and original expiry remain unchanged; appended notes regenerate the plan and clear translated caches. Omit DOB for the legacy independent-plan API. Expired plans start a new period. Configured HealthScribe stages audio temporarily in its own private S3 bucket before calling AgentCore; local database and app file storage stay local. HealthScribe supports English doctor dictation.",
+        "description": "JSON body { data, type, patientID } (the tasks doc). type \"text\": data is the discharge summary text.\ntype \"pdf\": data is the PDF as base64 (a data:application/pdf;base64, prefix is accepted); the PDF is\nconverted with pdfToText and stored in S3 emrpdf-rh as \u003csumId>.pdf. Any other type answers\n400 { statusCode: 400, message: \"type must be text or pdf\" }.\nThe random path (sumId) is stored in the SQL activeLinks table and is the DynamoDB uid of the summary\nitem. Before the response, a PDF is converted with pdfToText (a PDF with no readable text answers 400\nunreadable_pdf and nothing is saved) and the text, pasted or extracted, is saved on the item as raw-text.\nThe response comes at once; then, asynchronously: the text goes to the DischargeAI agent on AgentCore\n(session id = the sumId) and the call is awaited (it can take minutes), the agent's whole response is\nsaved as llm-summary with sum-id on the same item (expiresAt = now + 30 days), and the link is emailed\nto the patient's email and to caregiverEmail whatever status the agent gave. Nothing is translated.\nThe earlier multipart form (patientId + one of text, file, audio) is kept as an alias; audio comes from\nthe architecture diagram and goes to S3 emraudio-rh.\nThe opt-in local-agentcore mode uses local stores and captured email instead of AWS storage/email.\nAudio returns 501 when no live speech provider is configured.\n\nSend DOB with patientID to validate the identity and append to the active 30-day plan. The link and original expiry remain unchanged; appended notes regenerate the plan and clear translated caches. Omit DOB for the legacy independent-plan API. Expired plans start a new period.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1275,31 +1274,22 @@
         ],
         "responses": {
           "200": {
-            "description": "English source or translatedPlan with translationStatus and translationProblems; cached per plan revision"
+            "description": "English source or translatedPlan with translationStatus and translationProblems, taken from the agent's stored response"
           },
           "400": {
             "description": "Unsupported language or invalid bearer link"
           },
           "404": {
-            "description": "Unknown plan"
-          },
-          "409": {
-            "description": "Plan changed during translation; retry"
+            "description": "Unknown plan, or no translation for that language"
           },
           "410": {
             "description": "Expired plan"
-          },
-          "422": {
-            "description": "Unrecognized plan format"
           },
           "425": {
             "description": "Plan processing"
           },
           "500": {
-            "description": "Translation agent failed"
-          },
-          "501": {
-            "description": "Translator not configured"
+            "description": "Plan generation failed"
           }
         }
       }
@@ -1376,31 +1366,22 @@
         ],
         "responses": {
           "200": {
-            "description": "English source or translatedPlan with translationStatus and translationProblems; cached per plan revision"
+            "description": "English source or translatedPlan with translationStatus and translationProblems, taken from the agent's stored response"
           },
           "400": {
             "description": "Unsupported language or invalid bearer link"
           },
           "404": {
-            "description": "Unknown plan"
-          },
-          "409": {
-            "description": "Plan changed during translation; retry"
+            "description": "Unknown plan, or no translation for that language"
           },
           "410": {
             "description": "Expired plan"
-          },
-          "422": {
-            "description": "Unrecognized plan format"
           },
           "425": {
             "description": "Plan processing"
           },
           "500": {
-            "description": "Translation agent failed"
-          },
-          "501": {
-            "description": "Translator not configured"
+            "description": "Plan generation failed"
           }
         }
       }

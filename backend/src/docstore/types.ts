@@ -39,7 +39,6 @@ export interface SummaryItem {
   pdfKey?: string;
   audioKey?: string;
   meta?: SummaryMeta;
-  translations?: Record<string, import("../pipeline/translation.js").TranslationResult>;
 }
 
 /** Top-level attributes a caller may set after creation (the agent response, status, metadata). */

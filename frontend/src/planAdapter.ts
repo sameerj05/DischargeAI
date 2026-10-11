@@ -51,7 +51,8 @@ export function adaptPlan(value: unknown): DischargePlan | undefined {
 export function adaptSummary(response: SummaryResponse): { record: DischargeRecord; summary: string; status: string; flags: string[] } {
   const agent = object(response["llm-summary"])
   const summary = typeof response["llm-summary"] === "string" ? response["llm-summary"] : text(agent.summary) || text(agent.result)
-  const plan = response.translatedPlan ?? adaptPlan(agent.plan) ?? adaptMarkdownPlan(summary)
+  const byLang = object(object(agent.record).byLang)
+  const plan = response.translatedPlan ?? (object(byLang.en).medications ? byLang.en as DischargePlan : undefined) ?? adaptPlan(agent.plan) ?? adaptMarkdownPlan(summary)
   const language = response.language ?? "en"
   return {
     record: { createdAt: Date.parse(response.createdAt), expiresAt: response.expiresAt, byLang: plan ? { [language]: plan } : {} },
