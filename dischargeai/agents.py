@@ -354,7 +354,7 @@ Amazon Comprehend Medical entities (when provided):
 {SCHEDULE_RULES}
 
 Writing rules (5th grade reading level; the reviewer fails any line that misses it):
-- Talk to the patient as "you". Use short sentences of about 8 to 12 words.
+- Talk to the patient as "you". Sentence length does not matter; word choice does.
 - Use everyday words a 10-year-old knows. Each checklist item is one action or one fact.
 - Turn clinical phrases into plain actions: "for volume management" -> "to remove extra fluid
   from your body (volume management)"; "as reconciled" -> "as shown on your final medicine list".
@@ -644,15 +644,15 @@ Do the review in this order:
    EVERY line where:
    - a medical or technical term is used without plain words first (the term should come
      AFTER plain words, in parentheses: "fluid in your lungs (pulmonary edema)"), or
-   - the plain words are still too hard for a 10-year-old (long sentences, words like
-     "indefinitely", "formulation", "regimen", "management", "per", "as directed").
+   - the plain words are still too hard for a 10-year-old (words like "indefinitely",
+     "formulation", "regimen", "management", "per", "as directed").
    Quote the line, and put each hard word or phrase in double quotes in the problem, with
    the simpler wording to use. Each one blocks approval.
    Apply ONE steady standard, the same every round:
    - Text inside parentheses after plain words is the medical term on purpose. Never flag it.
    - Medicine names, doses, test names in parentheses, and "911" are fine.
-   - Do not flag a line only because it could be slightly shorter. Flag words a 10-year-old
-     would not know, or sentences over about 15 words.
+   - Sentence length is NOT a problem. Never flag a line for being long, for its word count,
+     or because it could be split. Flag only words a 10-year-old would not know.
 5. Plain-language accuracy. Every plain explanation must be medically correct AND must not
    add or contradict a fact about this patient. "sepsis (a serious infection in the blood)"
    is wrong when the notes say the infection was urinary and blood cultures were negative:

@@ -155,30 +155,33 @@ def reviewer_issues(review: Review, entries: list[dict[str, Any]]) -> list[dict[
     return issues
 
 
+# A reviewer reading-level flag that is only about length ("about 20 words, split it").
+_LENGTH_ONLY = re.compile(r"\b\d+\s*words?\b|word limit|-word|too long|long sentence|sentence is long|"
+                          r"\bsplit\b|shorter sentence|break it up|break (this|the sentence) up", re.IGNORECASE)
+# ...unless it also names a hard word.
+_WORD_PROBLEM = re.compile(r"too (hard|formal|technical|clinical|medical)|jargon|would not know|wouldn't know|"
+                           r"medical (term|phrase|word)|clinical (term|phrase|word)|hard word|unfamiliar",
+                           re.IGNORECASE)
+
+
 def readability_issues(review: Review, entries: list[dict[str, Any]], protected: list[str],
                        max_grade: float) -> list[dict[str, Any]]:
-    """Reading level is pass/fail.
+    """Reading level is judged on WORDS only; sentence length does not matter.
 
-    1. Every line the reviewer says a 5th grader could not read blocks approval, whatever the
-       overall score is. These are tied to lines, so the fix is a patch of just those lines.
-    2. If the overall Flesch-Kincaid grade of the plain words is over the limit, the few
-       hardest long lines are flagged too (one-line scores are noisy, so only a handful).
+    Every line the reviewer says uses words a 5th grader would not know blocks approval. Flags
+    that are only about sentence length are dropped. The Flesch-Kincaid grade (mostly driven by
+    sentence length) is still computed and recorded, but it never fails a plan.
     """
     hard: dict[str, str] = {}
     for r in review.readability_issues:
+        if _LENGTH_ONLY.search(r["problem"]) and not _WORD_PROBLEM.search(r["problem"]):
+            continue  # only about length, no hard word named
         for line_id in lines_matching(r["quote"], entries):
             hard.setdefault(line_id, f"TOO HARD FOR A 5TH GRADER: \"{r['quote']}\" -- {r['problem']}")
-    if review.grade_level > max_grade:
-        scored = sorted(((grade_level(e["text"], protected), e) for e in entries if len(e["text"].split()) >= 8),
-                        key=lambda ge: ge[0], reverse=True)
-        picked = [ge for ge in scored if ge[0] > max_grade + HARD_LINE_MARGIN][:MAX_HARD_LINES] or scored[:1]
-        for g, e in picked:
-            hard.setdefault(e["id"], f"HARD TO READ (grade {g:.1f}): \"{e['text']}\" -- use shorter sentences "
-                                     "and simpler words.")
     issues = [_issue(text, [line_id]) for line_id, text in hard.items()]
     if review.grade_level > max_grade:
-        summary = f"TOO HARD TO READ overall: grade {review.grade_level:.1f}, the limit is {max_grade:.1f}."
-        issues.append(_issue(summary, kind="global") if not issues else _issue(summary, kind="note"))
+        issues.append(_issue(f"Reading grade score {review.grade_level:.1f} (limit {max_grade:.1f}); informational "
+                             "only, sentence length does not fail the plan.", kind="note"))
     return issues
 
 
