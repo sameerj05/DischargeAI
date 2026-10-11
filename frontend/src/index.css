@@ -1665,6 +1665,19 @@ h1 {
   margin-bottom: 24px;
 }
 
+.patient-intro-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.patient-intro-head h1 {
+  margin-bottom: 0;
+  flex: 1 1 auto;
+}
+
 .patient-intro h1 {
   font-size: calc(var(--patient-font-scale, 1) * clamp(28px, 5vw, 38px));
 }
@@ -1990,6 +2003,69 @@ h1 {
 
 .patient-section-head .patient-section-title {
   margin-bottom: 0;
+}
+
+/* ── Read-aloud button ── */
+.patient-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.section-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.read-aloud-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  margin-left: auto;
+}
+
+.read-aloud-btn:hover {
+  background: var(--care-teal-soft);
+  color: var(--deep-teal);
+  border-color: var(--care-teal);
+}
+
+.read-aloud-btn:focus-visible {
+  outline: 2px solid var(--care-teal);
+  outline-offset: 2px;
+}
+
+.read-aloud-btn-active {
+  background: var(--care-teal);
+  border-color: var(--care-teal);
+  color: #fff;
+  box-shadow: 0 0 0 3px var(--care-teal-soft);
+}
+
+.read-aloud-btn-active:hover {
+  background: var(--deep-teal);
+  border-color: var(--deep-teal);
+  color: #fff;
+}
+
+.warning-signs-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .patient-section-intro {

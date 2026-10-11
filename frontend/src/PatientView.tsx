@@ -14,8 +14,42 @@ import { LanguagePicker } from "./LanguagePicker"
 import { FontSizeControl } from "./FontSizeControl"
 import { useFontScale } from "./fontScale"
 import { DeletionTimer } from "./DeletionTimer"
+import { useReadAloud } from "./useReadAloud"
 
-// A flag like "NEW" tints Care Teal; anything about duration or a higher dose
+// ── Read Aloud ────────────────────────────────────────────────────────────────
+
+// Maps Language codes to BCP-47 tags for SpeechSynthesisUtterance.lang
+const LANG_TO_BCP47: Record<Language, string> = {
+  en: "en-US",
+  es: "es-ES",
+  zh: "zh-CN",
+  ar: "ar-SA",
+}
+
+type ReadAloudButtonProps = {
+  label: string        // aria-label describing what will be read
+  text: string         // the text to speak
+  lang: Language
+  speak: (text: string, lang?: string) => void
+  currentText: string  // the text currently being spoken (empty if idle)
+}
+
+function ReadAloudButton({ label, text, lang, speak, currentText }: ReadAloudButtonProps) {
+  const isActive = currentText === text
+  return (
+    <button
+      aria-label={isActive ? `Stop reading ${label}` : `Read aloud: ${label}`}
+      aria-pressed={isActive}
+      className={`read-aloud-btn${isActive ? " read-aloud-btn-active" : ""}`}
+      onClick={() => speak(text, LANG_TO_BCP47[lang])}
+      type="button"
+    >
+      <Icon name={isActive ? "speakerOff" : "speaker"} size={18} />
+    </button>
+  )
+}
+
+// ── A flag like "NEW" tints Care Teal; anything about duration or a higher dose
 // ("for N more days", "higher dose") tints Coral to draw more attention.
 function flagTone(flag: string): "new" | "caution" {
   const lower = flag.toLowerCase()
@@ -91,6 +125,28 @@ export function PatientView({
 }) {
   const [language, setLanguage] = useState<Language>("en")
   const { step, scale, setFontStep, decrease, increase } = useFontScale()
+  const { speak, stop, state } = useReadAloud()
+  const [activeText, setActiveText] = useState("")
+
+  const handleSpeak = (text: string, lang = "en-US") => {
+    if (activeText === text) {
+      stop()
+      setActiveText("")
+    } else {
+      setActiveText(text)
+      speak(text, lang)
+    }
+  }
+
+  // When speech ends naturally, clear activeText
+  const wrappedSpeak = (text: string, lang?: string) => {
+    handleSpeak(text, lang)
+  }
+
+  // Clear activeText when state goes idle externally (e.g. speech ended)
+  if (state === "idle" && activeText !== "") {
+    setActiveText("")
+  }
 
   // TODO: replace with real backend call — GET /p/:token returns the
   // discharge plan keyed by language (plus expiresAt) for the patient.
@@ -123,7 +179,16 @@ export function PatientView({
         style={{ "--patient-font-scale": scale } as CSSProperties}
       >
         <div className="patient-intro">
-          <h1>{plan ? plan.title : session.displayName}</h1>
+          <div className="patient-intro-head">
+            <h1>{plan ? plan.title : session.displayName}</h1>
+            <ReadAloudButton
+              label="introduction"
+              text={`${plan ? plan.title : session.displayName}. ${t(language, "patientLede")}`}
+              lang={language}
+              speak={wrappedSpeak}
+              currentText={activeText}
+            />
+          </div>
           <p className="patient-lede">{t(language, "patientLede")}</p>
 
           {record ? (
@@ -153,6 +218,8 @@ export function PatientView({
             isChecked={isChecked}
             onToggle={toggle}
             progressFor={progressFor}
+            speak={wrappedSpeak}
+            activeText={activeText}
           />
         )}
 
@@ -171,12 +238,16 @@ function PatientPlan({
   isChecked,
   onToggle,
   progressFor,
+  speak,
+  activeText,
 }: {
   plan: DischargePlan
   language: Language
   isChecked: (id: string) => boolean
   onToggle: (id: string) => void
   progressFor: (ids: string[]) => { done: number; total: number }
+  speak: (text: string, lang?: string) => void
+  activeText: string
 }) {
   // Progress across every trackable medication dose item (checkbox meds only).
   const medIds = plan.medications.groups
@@ -185,6 +256,56 @@ function PatientPlan({
     .map((m) => m.id)
   const medProgress = progressFor(medIds)
 
+  // ── Read-aloud text builders ──────────────────────────────────────────────
+  const medsText = [
+    t(language, "medicationsTitle") + ". " + plan.medications.intro,
+    ...plan.medications.groups.flatMap((grp) => [
+      grp.label + ".",
+      ...grp.items.map((m) => `${m.name}: ${m.reason}${m.flag ? ", " + m.flag : ""}.`),
+    ]),
+  ].join(" ")
+
+  const newMedsText = plan.newMedicines.length
+    ? [
+        t(language, "newMedicinesTitle") + ".",
+        ...plan.newMedicines.map((m) => `${m.name}. ${m.detail}`),
+      ].join(" ")
+    : ""
+
+  const stoppedMedsText = plan.stoppedMedicines.length
+    ? [
+        t(language, "stoppedMedicinesTitle") + ".",
+        ...plan.stoppedMedicines.map((m) => `${m.name}. ${m.detail}`),
+      ].join(" ")
+    : ""
+
+  const todosText = [
+    t(language, "todosTitle") + ".",
+    t(language, "labsTitle") + ".",
+    ...(plan.todos.labs.length
+      ? plan.todos.labs.map((i) => `${i.label}${i.detail ? ". " + i.detail : ""}.`)
+      : [t(language, "labsEmpty")]),
+    t(language, "appointmentsTitle") + ".",
+    ...plan.todos.appointments.map((i) => `${i.label}${i.detail ? ". " + i.detail : ""}.`),
+    ...(plan.todos.appointmentsNote ? [plan.todos.appointmentsNote] : []),
+    t(language, "careInstructionsTitle") + ".",
+    ...plan.todos.careInstructions.map((i) => `${i.label}${i.detail ? ". " + i.detail : ""}.`),
+  ].join(" ")
+
+  const generalText = plan.generalInstructions.length
+    ? [t(language, "generalInstructionsTitle") + ".", ...plan.generalInstructions].join(" ")
+    : ""
+
+  const warningText = [
+    plan.warningSigns.heading,
+    ...plan.warningSigns.signs.map((s) => s + "."),
+    plan.warningSigns.emergencyLine,
+  ].join(" ")
+
+  const whyText = plan.whyHospitalized.length
+    ? [t(language, "whyHospitalizedTitle") + ".", ...plan.whyHospitalized].join(" ")
+    : ""
+
   return (
     <>
       <section className="patient-section" aria-labelledby="meds-head">
@@ -192,6 +313,13 @@ function PatientPlan({
           <h2 id="meds-head" className="patient-section-title">
             <Icon name="pill" size={22} /> {t(language, "medicationsTitle")}
           </h2>
+          <ReadAloudButton
+            label={t(language, "medicationsTitle")}
+            text={medsText}
+            lang={language}
+            speak={speak}
+            currentText={activeText}
+          />
         </div>
         <p className="patient-section-intro">{plan.medications.intro}</p>
 
@@ -238,7 +366,16 @@ function PatientPlan({
       {plan.newMedicines.length > 0 ? (
         <section className="patient-section" aria-labelledby="new-meds-head">
           <h2 id="new-meds-head" className="patient-section-title">
-            <Icon name="pill" size={22} /> {t(language, "newMedicinesTitle")}
+            <span className="section-title-row">
+              <Icon name="pill" size={22} /> {t(language, "newMedicinesTitle")}
+            </span>
+            <ReadAloudButton
+              label={t(language, "newMedicinesTitle")}
+              text={newMedsText}
+              lang={language}
+              speak={speak}
+              currentText={activeText}
+            />
           </h2>
           <ul className="explainer-list">
             {plan.newMedicines.map((item) => (
@@ -254,7 +391,16 @@ function PatientPlan({
       {plan.stoppedMedicines.length > 0 ? (
         <section className="patient-section" aria-labelledby="stopped-meds-head">
           <h2 id="stopped-meds-head" className="patient-section-title">
-            <Icon name="stop" size={22} /> {t(language, "stoppedMedicinesTitle")}
+            <span className="section-title-row">
+              <Icon name="stop" size={22} /> {t(language, "stoppedMedicinesTitle")}
+            </span>
+            <ReadAloudButton
+              label={t(language, "stoppedMedicinesTitle")}
+              text={stoppedMedsText}
+              lang={language}
+              speak={speak}
+              currentText={activeText}
+            />
           </h2>
           <ul className="stopped-list">
             {plan.stoppedMedicines.map((item) => (
@@ -274,7 +420,16 @@ function PatientPlan({
 
       <section className="patient-section" aria-labelledby="todos-head">
         <h2 id="todos-head" className="patient-section-title">
-          <Icon name="check" size={22} /> {t(language, "todosTitle")}
+          <span className="section-title-row">
+            <Icon name="check" size={22} /> {t(language, "todosTitle")}
+          </span>
+          <ReadAloudButton
+            label={t(language, "todosTitle")}
+            text={todosText}
+            lang={language}
+            speak={speak}
+            currentText={activeText}
+          />
         </h2>
 
         <TodoChecklist
@@ -313,8 +468,17 @@ function PatientPlan({
       {plan.generalInstructions.length > 0 ? (
         <section className="patient-section" aria-labelledby="general-head">
           <h2 id="general-head" className="patient-section-title">
-            <Icon name="document" size={22} />{" "}
-            {t(language, "generalInstructionsTitle")}
+            <span className="section-title-row">
+              <Icon name="document" size={22} />{" "}
+              {t(language, "generalInstructionsTitle")}
+            </span>
+            <ReadAloudButton
+              label={t(language, "generalInstructionsTitle")}
+              text={generalText}
+              lang={language}
+              speak={speak}
+              currentText={activeText}
+            />
           </h2>
           <ul className="general-list">
             {plan.generalInstructions.map((line, index) => (
@@ -330,7 +494,16 @@ function PatientPlan({
         aria-labelledby="warning-head"
       >
         <h2 id="warning-head" className="warning-signs-title">
-          <Icon name="warning" size={26} /> {plan.warningSigns.heading}
+          <span className="section-title-row">
+            <Icon name="warning" size={26} /> {plan.warningSigns.heading}
+          </span>
+          <ReadAloudButton
+            label="Warning signs"
+            text={warningText}
+            lang={language}
+            speak={speak}
+            currentText={activeText}
+          />
         </h2>
         <ul className="warning-signs-list">
           {plan.warningSigns.signs.map((sign, index) => (
@@ -345,8 +518,17 @@ function PatientPlan({
       {plan.whyHospitalized.length > 0 ? (
         <section className="patient-section" aria-labelledby="why-head">
           <h2 id="why-head" className="patient-section-title">
-            <Icon name="stethoscope" size={22} />{" "}
-            {t(language, "whyHospitalizedTitle")}
+            <span className="section-title-row">
+              <Icon name="stethoscope" size={22} />{" "}
+              {t(language, "whyHospitalizedTitle")}
+            </span>
+            <ReadAloudButton
+              label={t(language, "whyHospitalizedTitle")}
+              text={whyText}
+              lang={language}
+              speak={speak}
+              currentText={activeText}
+            />
           </h2>
           <ul className="general-list">
             {plan.whyHospitalized.map((line, index) => (
