@@ -429,10 +429,6 @@ export function DoctorDashboard({
                 ))}
               </div>
             </div>
-            <button className="patient-link" type="button">
-              View patient
-              <Icon name="chevron" size={15} />
-            </button>
           </section>
 
           <div className="content-grid">
