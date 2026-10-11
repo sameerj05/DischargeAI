@@ -1,5 +1,12 @@
 # Dependencies
 frontend/node_modules/
+backend/node_modules/
 
 # Build output
 frontend/dist/
+
+# Environment / credentials
+frontend/.env
+frontend/.env.local
+backend/.env
+backend/.env.local

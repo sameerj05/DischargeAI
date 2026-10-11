@@ -235,7 +235,7 @@ function translatePlan(
 
 // ── Example 1 — HFrEF / Pneumonia / AKI ──
 const example1En: DischargePlan = {
-  title: "Your Going-Home Plan",
+  title: "Your Care Plan",
   medications: {
     intro: MED_INTRO,
     groups: [
@@ -411,7 +411,7 @@ const example1En: DischargePlan = {
 
 // ── Example 2 — Sepsis / Complicated UTI / Ureteral Stent ──
 const example2En: DischargePlan = {
-  title: "Your Going-Home Plan",
+  title: "Your Care Plan",
   medications: {
     intro: MED_INTRO,
     groups: [
@@ -551,7 +551,7 @@ const example2En: DischargePlan = {
 
 // ── Example 3 — HFpEF / AFib / Cellulitis ──
 const example3En: DischargePlan = {
-  title: "Your Going-Home Plan",
+  title: "Your Care Plan",
   medications: {
     intro: MED_INTRO,
     groups: [
@@ -725,7 +725,7 @@ const example3En: DischargePlan = {
 
 // ── Example 4 — COPD / Pneumonia / Heart Failure ──
 const example4En: DischargePlan = {
-  title: "Your Going-Home Plan",
+  title: "Your Care Plan",
   medications: {
     intro: MED_INTRO,
     groups: [
@@ -859,7 +859,7 @@ const example4En: DischargePlan = {
 
 // ── Example 5 — Endocarditis / Heart Failure / IV Antibiotics ──
 const example5En: DischargePlan = {
-  title: "Your Going-Home Plan",
+  title: "Your Care Plan",
   medications: {
     intro: MED_INTRO,
     groups: [
@@ -991,7 +991,7 @@ const example5En: DischargePlan = {
 // Example 1 — HFrEF / Pneumonia / AKI
 const example1Text: Record<"es" | "zh" | "ar", PlanText> = {
   es: {
-    title: "Su plan para volver a casa",
+    title: "Su plan de atención",
     medicationsIntro: "Estos son todos los medicamentos que debe tomar ahora.",
     medGroups: [
       {
@@ -1069,7 +1069,7 @@ const example1Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   zh: {
-    title: "您的回家计划",
+    title: "您的护理计划",
     medicationsIntro: "这些是您现在应该服用的所有药物。",
     medGroups: [
       {
@@ -1147,7 +1147,7 @@ const example1Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   ar: {
-    title: "خطة عودتك إلى المنزل",
+    title: "خطة رعايتك",
     medicationsIntro: "هذه كل الأدوية التي يجب أن تتناولها الآن.",
     medGroups: [
       {
@@ -1229,7 +1229,7 @@ const example1Text: Record<"es" | "zh" | "ar", PlanText> = {
 // Example 2 — Sepsis / Complicated UTI / Ureteral Stent
 const example2Text: Record<"es" | "zh" | "ar", PlanText> = {
   es: {
-    title: "Su plan para volver a casa",
+    title: "Su plan de atención",
     medicationsIntro: "Estos son todos los medicamentos que debe tomar ahora.",
     medGroups: [
       {
@@ -1304,7 +1304,7 @@ const example2Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   zh: {
-    title: "您的回家计划",
+    title: "您的护理计划",
     medicationsIntro: "这些是您现在应该服用的所有药物。",
     medGroups: [
       {
@@ -1379,7 +1379,7 @@ const example2Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   ar: {
-    title: "خطة عودتك إلى المنزل",
+    title: "خطة رعايتك",
     medicationsIntro: "هذه كل الأدوية التي يجب أن تتناولها الآن.",
     medGroups: [
       {
@@ -1458,7 +1458,7 @@ const example2Text: Record<"es" | "zh" | "ar", PlanText> = {
 // Example 3 — HFpEF / AFib / Cellulitis
 const example3Text: Record<"es" | "zh" | "ar", PlanText> = {
   es: {
-    title: "Su plan para volver a casa",
+    title: "Su plan de atención",
     medicationsIntro: "Estos son todos los medicamentos que debe tomar ahora.",
     medGroups: [
       {
@@ -1543,7 +1543,7 @@ const example3Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   zh: {
-    title: "您的回家计划",
+    title: "您的护理计划",
     medicationsIntro: "这些是您现在应该服用的所有药物。",
     medGroups: [
       {
@@ -1628,7 +1628,7 @@ const example3Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   ar: {
-    title: "خطة عودتك إلى المنزل",
+    title: "خطة رعايتك",
     medicationsIntro: "هذه كل الأدوية التي يجب أن تتناولها الآن.",
     medGroups: [
       {
@@ -1717,7 +1717,7 @@ const example3Text: Record<"es" | "zh" | "ar", PlanText> = {
 // Example 4 — COPD / Pneumonia / Heart Failure
 const example4Text: Record<"es" | "zh" | "ar", PlanText> = {
   es: {
-    title: "Su plan para volver a casa",
+    title: "Su plan de atención",
     medicationsIntro: "Estos son todos los medicamentos que debe tomar ahora.",
     medGroups: [
       {
@@ -1790,7 +1790,7 @@ const example4Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   zh: {
-    title: "您的回家计划",
+    title: "您的护理计划",
     medicationsIntro: "这些是您现在应该服用的所有药物。",
     medGroups: [
       {
@@ -1863,7 +1863,7 @@ const example4Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   ar: {
-    title: "خطة عودتك إلى المنزل",
+    title: "خطة رعايتك",
     medicationsIntro: "هذه كل الأدوية التي يجب أن تتناولها الآن.",
     medGroups: [
       {
@@ -1940,7 +1940,7 @@ const example4Text: Record<"es" | "zh" | "ar", PlanText> = {
 // Example 5 — Endocarditis / Heart Failure / IV Antibiotics
 const example5Text: Record<"es" | "zh" | "ar", PlanText> = {
   es: {
-    title: "Su plan para volver a casa",
+    title: "Su plan de atención",
     medicationsIntro: "Estos son todos los medicamentos que debe tomar ahora.",
     medGroups: [
       {
@@ -2012,7 +2012,7 @@ const example5Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   zh: {
-    title: "您的回家计划",
+    title: "您的护理计划",
     medicationsIntro: "这些是您现在应该服用的所有药物。",
     medGroups: [
       {
@@ -2084,7 +2084,7 @@ const example5Text: Record<"es" | "zh" | "ar", PlanText> = {
     ],
   },
   ar: {
-    title: "خطة عودتك إلى المنزل",
+    title: "خطة رعايتك",
     medicationsIntro: "هذه كل الأدوية التي يجب أن تتناولها الآن.",
     medGroups: [
       {

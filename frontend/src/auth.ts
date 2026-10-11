@@ -52,35 +52,35 @@ const DEMO_CREDENTIALS: Record<
       subtitle: "Internal Medicine",
     },
   },
-  "caregiver@demo.health": {
-    password: "demo1234",
-    session: {
-      role: "caregiver",
-      displayName: "Jordan Martinez",
-      subtitle: "Caregiver · linked to 1 patient",
-      caregiverPatientIds: ["p1"],
-    },
-  },
 }
 
 // TODO: replace with real backend call — GET /p/:token validates the opaque
 // token and returns the patient's session + discharge content.
 const DEMO_PATIENTS: Record<
   string,
-  { dob: string; patientId: string; displayName: string }
+  { dob: string; patientId: string; displayName: string; role?: Role; caregiverName?: string; caregiverPatientIds?: string[] }
 > = {
   "demo-token-123": {
     dob: "1976-04-12",
     patientId: "p1",
     displayName: "Your recovery plan",
+    role: "patient",
+  },
+  "demo-caregiver-456": {
+    dob: "1976-04-12",
+    patientId: "p1",
+    displayName: "Jordan Martinez",
+    role: "caregiver",
+    caregiverName: "Jordan Martinez",
+    caregiverPatientIds: ["p1"],
   },
 }
 
 // Values displayed in the login "Demo accounts" helper panel.
 export const DEMO_DOCTOR = { email: "rivera@demo.health", password: "demo1234" }
 export const DEMO_CAREGIVER = {
-  email: "caregiver@demo.health",
-  password: "demo1234",
+  link: "/p/demo-caregiver-456",
+  dob: "1976-04-12",
 }
 export const DEMO_PATIENT_LINK = "/p/demo-token-123"
 export const DEMO_PATIENT_DOB = "1976-04-12"
@@ -123,12 +123,14 @@ export function resolvePatientToken(
       reject(new Error(GENERIC_AUTH_ERROR))
       return
     }
+    const role = record.role ?? "patient"
     resolve({
-      role: "patient",
-      displayName: record.displayName,
-      subtitle: "Patient",
+      role,
+      displayName: role === "caregiver" ? (record.caregiverName ?? "Caregiver") : record.displayName,
+      subtitle: role === "caregiver" ? "Caregiver · linked to 1 patient" : "Patient",
       patientId: record.patientId,
       patientToken: token.trim(),
+      ...(role === "caregiver" ? { caregiverPatientIds: record.caregiverPatientIds } : {}),
       exp: Date.now() + IDLE_TIMEOUT_MS,
     })
   })
