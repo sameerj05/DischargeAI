@@ -15,14 +15,18 @@ import { createLogger, type Logger } from "./logger.js";
 import { runIngestJob, type PendingInput } from "./pipeline/ingestJob.js";
 import { runPurge, type PurgeReport } from "./pipeline/purge.js";
 import { JobQueue } from "./pipeline/queue.js";
-import { createAgent, type DischargeAgent } from "./pipeline/agent.js";
+import { createAgent, type AgentProvider } from "./pipeline/agent.js";
 import { createSpeechToText, type SpeechToText } from "./pipeline/speechToText.js";
 import type { SecretsBootstrapResult } from "./secrets.js";
+import { ElevenLabsReadAloud, type ReadAloudProvider } from "./pipeline/readAloud.js";
+import { MedicalLiveDictation, type LiveDictationProvider } from "./pipeline/liveDictation.js";
 
 export const NO_SECRETS: SecretsBootstrapResult = { source: "env", applied: [], overriddenByEnv: [], missingKeys: [], reason: "not attempted", ms: 0 };
 
 /** Everything a route or a job needs, wired once at boot. */
 export interface AppContext {
+  /** Present only in the explicitly launched, isolated local verification server. */
+  mode?: "local-test" | "local-agentcore";
   config: Config;
   /** Where the configuration came from (names only), for /health. */
   secrets: SecretsBootstrapResult;
@@ -42,8 +46,10 @@ export interface AppContext {
   /** Deletion receipts sink (sql by default). */
   receipts: AuditSink;
   /** The DischargeAI agent on Bedrock AgentCore Runtime. */
-  agent: DischargeAgent;
+  agent: AgentProvider;
   speechToText: SpeechToText;
+  liveDictation?: LiveDictationProvider;
+  readAloud?: ReadAloudProvider;
   mailer: Mailer;
   emailQueue?: EmailQueue;
   queue: JobQueue;
@@ -116,6 +122,8 @@ export async function createContext(opts: CreateContextOptions = {}): Promise<Ap
     receipts,
     agent,
     speechToText,
+    liveDictation: new MedicalLiveDictation(config.TRANSCRIBE_STREAMING_REGION),
+    readAloud: config.ELEVENLABS_API_KEY ? new ElevenLabsReadAloud(config) : undefined,
     mailer,
     emailQueue,
     queue,

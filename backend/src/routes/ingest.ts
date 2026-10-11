@@ -9,6 +9,7 @@ import { AppError, badRequest, notFound } from "../errors.js";
 import { decodePdfData, looksLikePdf, pdfToText, type PdfText } from "../extract/pdfToText.js";
 import { isEmptyText, normalizeText } from "../extract/text.js";
 import { uploadMiddleware, type UploadedFiles } from "../middleware/upload.js";
+import { PatientDob } from "./patients.js";
 
 /** The patients table's id may be a number (an INT column) or text; both arrive here as text. */
 const PatientIdField = z.union([z.string().trim(), z.number().int().transform(String)]).optional();
@@ -19,6 +20,7 @@ const JsonBody = z.object({
   type: z.unknown().optional(),
   patientID: PatientIdField,
   patientId: PatientIdField,
+  DOB: PatientDob.optional(),
 });
 
 /** The earlier multipart form, kept as an alias: patientId + exactly one of text | file (PDF) | audio. */
@@ -26,11 +28,13 @@ const FormFields = z.object({
   patientId: z.string().trim().optional(),
   patientID: z.string().trim().optional(),
   text: z.string().optional(),
+  DOB: PatientDob.optional(),
 });
 
 interface Parsed {
   kind: InputKind;
   patientId: string;
+  dob?: string;
   text?: string;
   file?: { buffer: Buffer; mimeType: string; fileName?: string };
 }
@@ -55,14 +59,17 @@ const MAX_LLM_CHARS = 200_000;
 export function ingestRouter(ctx: AppContext): Router {
   const r = Router();
   const upload = uploadMiddleware(ctx.config.MAX_UPLOAD_BYTES);
+  const accepting = new Set<string>();
 
   r.post("/ingest", upload, async (req, res) => {
     const parsed = req.is("multipart/form-data") ? parseMultipart(req.body, (req.files ?? {}) as UploadedFiles) : parseJson(req.body);
+    if (ctx.speechToText.name === "unavailable" && parsed.kind === "audio") throw new AppError(501, "live_dictation_unavailable", "Live dictation is unavailable. Paste notes or upload a readable PDF.");
     if (parsed.file && parsed.file.buffer.length > ctx.config.MAX_UPLOAD_BYTES) throw new AppError(413, "file_too_large", `The file is larger than ${ctx.config.MAX_UPLOAD_BYTES} bytes`);
     if ((parsed.text?.length ?? 0) > MAX_LLM_CHARS) throw badRequest("input_too_long", `Text is limited to ${MAX_LLM_CHARS.toLocaleString("en-US")} characters`);
 
     const patient = await ctx.patients.getById(parsed.patientId);
     if (!patient) throw notFound("patient_not_found", "Unknown patientID");
+    if (parsed.dob && patient.dateOfBirth?.slice(0, 10) !== parsed.dob) throw new AppError(409, "patient_dob_mismatch", "The patient ID and DOB do not match");
 
     // A PDF becomes text here, before anything is saved, so an unreadable one is refused outright.
     // From this point on every input kind but audio has its text in hand.
@@ -78,6 +85,40 @@ export function ingestRouter(ctx: AppContext): Router {
       if (text.length > MAX_LLM_CHARS) throw badRequest("input_too_long", `The PDF holds more than ${MAX_LLM_CHARS.toLocaleString("en-US")} characters of text`);
     }
 
+    if (parsed.dob) {
+      if (accepting.has(patient.id)) throw new AppError(409, "patient_busy", "A writeup is already being accepted for this patient");
+      accepting.add(patient.id);
+    }
+    try {
+    const active = parsed.dob ? await ctx.activeLinks.activeForPatient(patient.id, ctx.clock.nowIso()) : undefined;
+    if (active) {
+      const latest = await ctx.jobs.latestForLink(active.sumId);
+      if (latest && !["done", "failed", "needs_review"].includes(latest.stage)) throw new AppError(409, "patient_busy", "Wait for this patient's current writeup to finish before appending");
+      const previous = await ctx.summaries.get(active.sumId);
+      if (!previous) throw new AppError(409, "plan_missing", "The active plan is unavailable");
+      const combined = [previous["raw-text"], text && `Update (${ctx.clock.nowIso()}):\n${text}`].filter(Boolean).join("\n\n");
+      if (combined.length > MAX_LLM_CHARS) throw badRequest("input_too_long", "The combined 30-day notes exceed the input limit");
+      let pdfKey = previous.pdfKey; let audioKey = previous.audioKey;
+      if (parsed.file?.buffer) {
+        if (parsed.kind === "pdf") {
+          pdfKey = pdfKeyFor(active.sumId);
+          await ctx.pdf.put({ key: pdfKey, body: parsed.file.buffer, contentType: "application/pdf" });
+          await ctx.activeLinks.setPdfKey(active.sumId, pdfKey);
+        } else {
+          audioKey = audioKeyFor(active.sumId, parsed.file.mimeType, parsed.file.fileName);
+          await ctx.audio.put({ key: audioKey, body: parsed.file.buffer, contentType: parsed.file.mimeType });
+          if (previous.audioKey && previous.audioKey !== audioKey) await ctx.audio.delete(previous.audioKey);
+          await ctx.activeLinks.setAudioKey(active.sumId, audioKey);
+        }
+      }
+      const job = await ctx.jobs.create({ sumId: active.sumId, inputKind: parsed.kind, now: ctx.clock.nowIso(), meta: { appended: true, inputBytes: parsed.file?.buffer.length ?? Buffer.byteLength(text ?? "", "utf8"), mimeType: parsed.file?.mimeType } });
+      await ctx.summaries.update(active.sumId, { "raw-text": combined, status: "processing", inputKind: parsed.kind, ...(pdfKey ? { pdfKey } : {}), ...(audioKey ? { audioKey } : {}) });
+      await ctx.activeLinks.setStatus(active.sumId, "pending");
+      await ctx.audit.append({ event: "link.appended", sumId: active.sumId, actor: "provider", at: ctx.clock.nowIso(), details: { jobId: job.id } });
+      res.status(202).json({ statusCode: 202, message: "information appended", appended: true, sumId: active.sumId, jobId: job.id, link: ctx.patientUrl(active.sumId), expiresAt: active.expiresAt });
+      ctx.enqueueIngest(job.id, parsed.kind === "audio" ? { sumId: active.sumId, kind: parsed.kind, file: parsed.file, appendAudio: true } : undefined);
+      return;
+    }
     const sumId = newSumId();
     const createdAt = ctx.clock.now();
     const expiresAt = new Date(createdAt.getTime() + LINK_TTL_MS);
@@ -148,6 +189,7 @@ export function ingestRouter(ctx: AppContext): Router {
     });
 
     ctx.enqueueIngest(job.id, kind === "audio" ? { sumId, kind, file: parsed.file } : undefined);
+    } finally { if (parsed.dob) accepting.delete(patient.id); }
   });
 
   return r;
@@ -162,11 +204,11 @@ function parseJson(body: unknown): Parsed {
   if (typeof b.data !== "string") throw badRequest("missing_data", type === "pdf" ? "data must be the PDF as a base64 string" : "data must be the discharge summary text");
   if (type === "text") {
     if (isEmptyText(b.data)) throw badRequest("empty_input", "data is empty");
-    return { kind: "text", patientId, text: b.data };
+    return { kind: "text", patientId, dob: b.DOB, text: b.data };
   }
   const buffer = decodePdfData(b.data);
   if (!buffer.length || !looksLikePdf(buffer)) throw badRequest("empty_input", "data is not a base64-encoded PDF");
-  return { kind: "pdf", patientId, file: { buffer, mimeType: "application/pdf", fileName: "upload.pdf" } };
+  return { kind: "pdf", patientId, dob: b.DOB, file: { buffer, mimeType: "application/pdf", fileName: "upload.pdf" } };
 }
 
 function parseMultipart(body: unknown, files: UploadedFiles): Parsed {
@@ -181,7 +223,7 @@ function parseMultipart(body: unknown, files: UploadedFiles): Parsed {
   if (provided > 1) throw badRequest("multiple_inputs", "Provide exactly one of text, file or audio");
   if (pdf && (pdf.size === 0 || !looksLikePdf(pdf.buffer))) throw badRequest("empty_input", "The uploaded file is not a readable PDF");
   if (audio && audio.size === 0) throw badRequest("empty_input", "The audio clip is empty");
-  if (pdf) return { kind: "pdf", patientId, file: { buffer: pdf.buffer, mimeType: pdf.mimetype, fileName: pdf.originalname } };
-  if (audio) return { kind: "audio", patientId, file: { buffer: audio.buffer, mimeType: audio.mimetype, fileName: audio.originalname } };
-  return { kind: "text", patientId, text };
+  if (pdf) return { kind: "pdf", patientId, dob: fields.DOB, file: { buffer: pdf.buffer, mimeType: pdf.mimetype, fileName: pdf.originalname } };
+  if (audio) return { kind: "audio", patientId, dob: fields.DOB, file: { buffer: audio.buffer, mimeType: audio.mimetype, fileName: audio.originalname } };
+  return { kind: "text", patientId, dob: fields.DOB, text };
 }

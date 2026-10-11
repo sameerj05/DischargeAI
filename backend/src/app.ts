@@ -9,6 +9,7 @@ import { errorHandler } from "./middleware/errors.js";
 import { providerAuth } from "./middleware/providerAuth.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { healthRouter } from "./routes/health.js";
+import { authRouter } from "./routes/auth.js";
 import { ingestRouter } from "./routes/ingest.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { llmSummaryRouter } from "./routes/llmSummary.js";
@@ -17,14 +18,15 @@ import { patientsRouter } from "./routes/patients.js";
 import { summaryRouter } from "./routes/summary.js";
 import { synthesizeRouter } from "./routes/synthesize.js";
 import { translationRouter } from "./routes/translation.js";
+import { readAloudRouter } from "./routes/readAloud.js";
 
 export const OPENAPI_FILE = join(import.meta.dirname, "..", "openapi.yaml");
 
 /** Paths the team contract names, plus the earlier routes kept as aliases. */
 export const PROVIDER_PATHS = ["/patients", "/ingest", "/jobs", "/synthesize"];
-export const PATIENT_PATHS = ["/llm-sumary", "/llm-summary", "/translation", "/summary", "/translate", "/p"];
+export const PATIENT_PATHS = ["/llm-sumary", "/llm-summary", "/translation", "/summary", "/translate", "/p", "/read-aloud"];
 
-export function buildApp(ctx: AppContext): Express {
+function buildApi(ctx: AppContext): Express {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", true);
@@ -54,6 +56,8 @@ export function buildApp(ctx: AppContext): Express {
   });
 
   app.use(healthRouter(ctx));
+  app.use("/auth", rateLimit({ capacity: 20, refillPerSecond: 0.2 }));
+  app.use(authRouter(ctx));
 
   // OpenAPI: served from backend/openapi.yaml when present.
   if (existsSync(OPENAPI_FILE)) {
@@ -73,10 +77,31 @@ export function buildApp(ctx: AppContext): Express {
   app.use(PATIENT_PATHS, rateLimit({ capacity: 120, refillPerSecond: 2 }));
   app.use(llmSummaryRouter(ctx));
   app.use(translationRouter(ctx));
+  app.use("/read-aloud", rateLimit({ capacity: 20, refillPerSecond: 0.2 }));
+  app.use(readAloudRouter(ctx));
   app.use(summaryRouter(ctx));
   app.use(patientLinkRouter(ctx));
 
   app.use((_req, res) => res.status(404).json({ statusCode: 404, error: "not_found", message: "No such route" }));
   app.use(errorHandler(ctx.log));
+  return app;
+}
+
+/** One origin for the built UI and API; legacy API paths remain available. */
+export function buildApp(ctx: AppContext): Express {
+  const app = express();
+  app.disable("x-powered-by");
+  const api = buildApi(ctx);
+  app.use("/api", api);
+  const frontend = join(import.meta.dirname, "..", "..", "frontend", "dist");
+  if (existsSync(join(frontend, "index.html"))) {
+    app.use(express.static(frontend));
+    app.get(["/s/:token", "/p/:token"], (req, res, next) => {
+      if (req.path.startsWith("/p/") && !req.get("Accept")?.includes("text/html")) { next(); return; }
+      res.setHeader("Cache-Control", "no-store");
+      res.sendFile(join(frontend, "index.html"));
+    });
+  }
+  app.use(api);
   return app;
 }

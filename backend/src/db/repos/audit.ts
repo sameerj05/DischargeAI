@@ -4,6 +4,8 @@ export type AuditActor = "provider" | "patient" | "system";
 
 export type AuditEvent =
   | "patient.created"
+  | "patient.matched"
+  | "link.appended"
   | "link.created"
   | "job.stage"
   | "email.sent"

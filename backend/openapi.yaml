@@ -2,20 +2,34 @@ openapi: 3.0.3
 info:
   title: DischargeAI backend
   version: 0.2.0
-  description: |
-    Discharge summaries in (pasted text, a PDF, or dictated audio), a patient link out, every piece of
+  description: >
+    Discharge summaries in (pasted text, a PDF, or dictated audio), a patient
+    link out, every piece of
+
     data self-destructs 30 days after it was created.
 
-    Surface: the API note first, the team architecture diagram where the note is silent.
-    Provider endpoints need the `x-provider-key` header. Patient endpoints are authenticated by the
+
+    Surface: the API note first, the team architecture diagram where the note is
+    silent.
+
+    Provider endpoints need the `x-provider-key` header. Patient endpoints are
+    authenticated by the
+
     unguessable 256-bit link id (43 base64url characters) and need no header.
 
-    The summary is written by the team's DischargeAI agent on Amazon Bedrock AgentCore Runtime. The
-    sum-id is the AgentCore session id, and the agent's response is stored and returned exactly as it
-    came back (on the live runtime: status, flags, summary, plan). Translation is not built yet:
+
+    The summary is written by the team's DischargeAI agent on Amazon Bedrock
+    AgentCore Runtime. The
+
+    sum-id is the AgentCore session id, and the agent's response is stored and
+    returned exactly as it
+
+    came back (canonical: status, flags, summary, plan; the hackathon runtime
+    returned legacy result text). Translation is not built yet:
+
     GET /translation and GET /translate answer 501.
 servers:
-  - url: http://localhost:4000
+  - url: /api
 tags:
   - name: provider
     description: Provider front end (x-provider-key).
@@ -38,186 +52,543 @@ components:
     sumIdHyphen:
       name: sum-id
       in: query
-      description: "The sumId from POST /ingest (43 characters). The tasks doc's spelling; sum_id is accepted too"
-      schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+      description: The sumId from POST /ingest (43 characters). The tasks doc's
+        spelling; sum_id is accepted too
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{43}$
     sumIdUnderscore:
       name: sum_id
       in: query
       description: The same id, as GET /translation spells it
-      schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{43}$
     link:
       name: link
       in: query
       required: true
       description: The 43-character link id from the patient's email.
-      schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{43}$
   schemas:
     Error:
       type: object
-      description: "Every error carries the tasks doc's statusCode and message, plus a stable code in error."
-      required: [statusCode, message, error]
+      description: Every error carries the tasks doc's statusCode and message, plus a
+        stable code in error.
+      required:
+        - statusCode
+        - message
+        - error
       properties:
-        statusCode: { type: integer, example: 400 }
-        message: { type: string, example: type must be text or pdf }
-        error: { type: string, description: Stable machine-readable code }
+        statusCode:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: type must be text or pdf
+        error:
+          type: string
+          description: Stable machine-readable code
     Patient:
       type: object
-      description: "The team contract's patient shape (backend tasks doc, GET /patients), exactly these nine keys, read from the team's patients table (patientinfo). Values are as the table holds them; a key whose column the table lacks is null."
-      required: [ID, DOB, FirstName, LastName, ZipCode, email, phoneNumber, caregiverEmail, caregiverName]
+      description: The team contract's patient shape (backend tasks doc, GET
+        /patients), exactly these nine keys, read from the team's patients table
+        (patientinfo). Values are as the table holds them; a key whose column
+        the table lacks is null.
+      required:
+        - ID
+        - DOB
+        - FirstName
+        - LastName
+        - ZipCode
+        - email
+        - phoneNumber
+        - caregiverEmail
+        - caregiverName
       additionalProperties: false
       properties:
-        ID: { oneOf: [{ type: string }, { type: integer }], description: "The table's id as stored: a number when the column is INT" }
-        DOB: { type: string, format: date, nullable: true, example: "1954-03-18" }
-        FirstName: { type: string, nullable: true }
-        LastName: { type: string, nullable: true }
-        ZipCode: { type: string, nullable: true }
-        email: { type: string, format: email, nullable: true }
-        phoneNumber: { type: string, nullable: true }
-        caregiverEmail: { type: string, format: email, nullable: true }
-        caregiverName: { type: string, nullable: true }
+        ID:
+          oneOf:
+            - type: string
+            - type: integer
+          description: "The table's id as stored: a number when the column is INT"
+        DOB:
+          type: string
+          format: date
+          nullable: true
+          example: 1954-03-18
+        FirstName:
+          type: string
+          nullable: true
+        LastName:
+          type: string
+          nullable: true
+        ZipCode:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        phoneNumber:
+          type: string
+          nullable: true
+        caregiverEmail:
+          type: string
+          format: email
+          nullable: true
+        caregiverName:
+          type: string
+          nullable: true
     PatientDetail:
-      description: "GET /patients/{id}: the nine contract keys plus the preferred language and the active link."
+      description: "GET /patients/{id}: the nine contract keys plus the preferred
+        language and the active link."
       allOf:
         - $ref: "#/components/schemas/Patient"
         - type: object
           properties:
-            preferredLanguage: { type: string, nullable: true, description: "BCP-47, when the patients table has such a column; informational" }
+            preferredLanguage:
+              type: string
+              nullable: true
+              description: BCP-47, when the patients table has such a column; informational
             activeLink:
               type: object
               nullable: true
               properties:
-                sumId: { type: string }
-                link: { type: string }
-                status: { type: string }
-                createdAt: { type: string, format: date-time }
-                expiresAt: { type: string, format: date-time }
+                sumId:
+                  type: string
+                link:
+                  type: string
+                status:
+                  type: string
+                createdAt:
+                  type: string
+                  format: date-time
+                expiresAt:
+                  type: string
+                  format: date-time
     AgentResponse:
-      description: |
-        The DischargeAI agent's response, stored and returned exactly as it came back, nothing added or
-        removed. On the live runtime (entrypoint agentcore_app.py on the AI-Infra branch) it is
-        { status, flags, summary, plan }: status is approved, needs_clinician_check or needs_human_review,
-        flags lists what the agent's own review found, summary is the Going-Home Plan in Markdown, and
-        plan holds the same plan as sections. If the agent ever answers with text that is not JSON, that
+      description: >
+        The DischargeAI agent's response, stored and returned exactly as it came
+        back, nothing added or
+
+        removed. On the live runtime (entrypoint agentcore_app.py on the
+        AI-Infra branch) it is
+
+        { status, flags, summary, plan }: status is approved,
+        needs_clinician_check or needs_human_review,
+
+        flags lists what the agent's own review found, summary is the Going-Home
+        Plan in Markdown, and
+
+        plan holds the same plan as sections. If the agent ever answers with
+        text that is not JSON, that
+
         text is stored as a string.
       type: object
       additionalProperties: true
       properties:
-        status: { type: string }
-        flags: { type: array, items: { type: string } }
-        summary: { type: string }
-        plan: { type: object, additionalProperties: true }
+        status:
+          type: string
+        flags:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+        plan:
+          type: object
+          additionalProperties: true
     LlmSummaryView:
       type: object
-      required: ["sum-id", "llm-summary", expiresAt, daysLeft]
+      required:
+        - sum-id
+        - llm-summary
+        - expiresAt
+        - daysLeft
       properties:
-        "sum-id": { type: string }
-        sumId: { type: string, description: The same value as sum-id }
-        patientID: { type: string }
-        status: { type: string, enum: [ready], description: "The item's status (the agent's own verdict is inside llm-summary)" }
-        "llm-summary": { $ref: "#/components/schemas/AgentResponse" }
-        createdAt: { type: string, format: date-time }
-        expiresAt: { type: string, format: date-time, description: createdAt + 30 days exactly; the data is gone after this moment }
-        daysLeft: { type: integer }
+        sum-id:
+          type: string
+        sumId:
+          type: string
+          description: The same value as sum-id
+        patientID:
+          type: string
+        status:
+          type: string
+          enum:
+            - ready
+          description: The item's status (the agent's own verdict is inside llm-summary)
+        llm-summary:
+          $ref: "#/components/schemas/AgentResponse"
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: createdAt + 30 days exactly; the data is gone after this moment
+        daysLeft:
+          type: integer
     Accepted:
       type: object
-      required: [statusCode, message, sumId, link, jobId, expiresAt]
+      required:
+        - statusCode
+        - message
+        - sumId
+        - link
+        - jobId
+        - expiresAt
       properties:
-        statusCode: { type: integer, enum: [202] }
-        message: { type: string, enum: ["ingestion started"] }
-        sumId: { type: string, description: "The random path (43 characters, 256 random bits): the activeLinks.sumId, the DynamoDB uid and sum-id, the sum-id / sum_id query value and the AgentCore session id" }
-        link: { type: string, description: "${PATIENT_APP_URL}/s/${sumId}" }
-        jobId: { type: string }
-        expiresAt: { type: string, format: date-time }
-        statusUrl: { type: string, description: "/jobs/{jobId}" }
-        stage: { type: string }
-        linkId: { type: string, description: The same value as sumId (earlier name) }
-        status: { type: string, enum: ["ingestion started"], description: The same value as message (earlier name) }
+        statusCode:
+          type: integer
+          enum:
+            - 202
+        message:
+          type: string
+        sumId:
+          type: string
+          description: "The random path (43 characters, 256 random bits): the
+            activeLinks.sumId, the DynamoDB uid and sum-id, the sum-id / sum_id
+            query value and the AgentCore session id"
+        link:
+          type: string
+          description: ${PATIENT_APP_URL}/s/${sumId}
+        jobId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        statusUrl:
+          type: string
+          description: /jobs/{jobId}
+        stage:
+          type: string
+        linkId:
+          type: string
+          description: The same value as sumId (earlier name)
+        status:
+          type: string
+          enum:
+            - ingestion started
+          description: The same value as message (earlier name)
+        appended:
+          type: boolean
     Job:
       type: object
       properties:
-        jobId: { type: string }
-        stage: { type: string, enum: [received, transcribing, simplifying, stored, emailing, done, failed], description: simplifying is the agent run }
-        inputKind: { type: string, enum: [text, pdf, audio] }
-        error: { type: string, nullable: true }
-        meta: { type: object, additionalProperties: true, description: "provider (agentcore), agentRuntimeArn, agentMs, sourceChars, pdfPages, pdfEngine, pdfStore, speechProvider" }
-        sumId: { type: string }
-        linkRef: { type: string, description: First 8 hex characters of the sumId's sha256, for logs }
-        linkStatus: { type: string, nullable: true, enum: [pending, ready, failed, expired, purged] }
-        expiresAt: { type: string, format: date-time, nullable: true }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        jobId:
+          type: string
+        stage:
+          type: string
+          enum:
+            - received
+            - transcribing
+            - simplifying
+            - stored
+            - emailing
+            - done
+            - failed
+          description: simplifying is the agent run
+        inputKind:
+          type: string
+          enum:
+            - text
+            - pdf
+            - audio
+        error:
+          type: string
+          nullable: true
+        meta:
+          type: object
+          additionalProperties: true
+          description: provider (agentcore), agentRuntimeArn, agentMs, sourceChars,
+            pdfPages, pdfEngine, pdfStore, speechProvider
+        sumId:
+          type: string
+        linkRef:
+          type: string
+          description: First 8 hex characters of the sumId's sha256
+          for logs: null
+        linkStatus:
+          type: string
+          nullable: true
+          enum:
+            - pending
+            - ready
+            - failed
+            - expired
+            - purged
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     SynthesizeRequest:
       type: object
       description: Exactly one of sumId (or linkId) or text.
       properties:
-        sumId: { type: string, description: Send the raw text stored for this summary to the agent again (session id = this sum-id) and store the new response }
-        linkId: { type: string, description: The same as sumId (earlier name) }
-        text: { type: string, description: Send this text to the agent in a fresh session and return the response without storing it }
+        sumId:
+          type: string
+          description: Send the raw text stored for this summary to the agent again
+            (session id = this sum-id) and store the new response
+        linkId:
+          type: string
+          description: The same as sumId (earlier name)
+        text:
+          type: string
+          description: Send this text to the agent in a fresh session and return the
+            response without storing it
     SynthesizeResponse:
       type: object
       properties:
-        stored: { type: boolean }
-        sumId: { type: string }
-        status: { type: string, enum: [ready] }
-        emailed: { type: boolean, description: sumId mode only; whether the patient has been sent the link }
-        "llm-summary": { $ref: "#/components/schemas/AgentResponse" }
-        latencyMs: { type: integer }
-        linkRef: { type: string }
-        expiresAt: { type: string, format: date-time }
+        stored:
+          type: boolean
+        sumId:
+          type: string
+        status:
+          type: string
+          enum:
+            - ready
+        emailed:
+          type: boolean
+          description: sumId mode only; whether the patient has been sent the link
+        llm-summary:
+          $ref: "#/components/schemas/AgentResponse"
+        latencyMs:
+          type: integer
+        linkRef:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
     Health:
       type: object
       properties:
-        ok: { type: boolean }
-        service: { type: string }
+        ok:
+          type: boolean
+        service:
+          type: string
+        mode:
+          type: string
+          enum:
+            - aws
+            - local-test
+            - local-agentcore
+        capabilities:
+          type: object
+          properties:
+            liveAi:
+              type: boolean
+            dictation:
+              type: boolean
+            translation:
+              type: boolean
+            readAloud:
+              type: boolean
         clock:
           type: object
           properties:
-            now: { type: string, format: date-time }
-            offsetDays: { type: number }
-            demoNow: { type: string, nullable: true, description: Set when DEMO_NOW pinned the clock }
-        linkTtlDays: { type: integer, enum: [30] }
+            now:
+              type: string
+              format: date-time
+            offsetDays:
+              type: number
+            demoNow:
+              type: string
+              nullable: true
+              description: Set when DEMO_NOW pinned the clock
+        linkTtlDays:
+          type: integer
+          enum:
+            - 30
         config:
           type: object
           description: Where the configuration came from. Names only, never values.
           properties:
-            source: { type: string, enum: [secrets-manager, env, none] }
-            secretArn: { type: string, nullable: true }
-            fromSecret: { type: array, items: { type: string } }
-            overriddenByEnv: { type: array, items: { type: string } }
-            missingKeys: { type: array, items: { type: string } }
-            reason: { type: string, nullable: true }
+            source:
+              type: string
+              enum:
+                - secrets-manager
+                - env
+                - none
+            secretArn:
+              type: string
+              nullable: true
+            fromSecret:
+              type: array
+              items:
+                type: string
+            overriddenByEnv:
+              type: array
+              items:
+                type: string
+            missingKeys:
+              type: array
+              items:
+                type: string
+            reason:
+              type: string
+              nullable: true
         providers:
           type: object
           properties:
-            llm: { type: string, enum: [agentcore] }
-            agentRuntimeArn: { type: string }
-            agentQualifier: { type: string, description: The AgentCore endpoint, DEFAULT unless AGENT_QUALIFIER is set }
-            speech: { type: string, enum: [transcribe] }
-            sqlConnection: { type: string, description: The RDS connection, without the password }
-            docStore: { type: string, enum: [dynamo] }
-            docStoreTarget: { type: string }
-            pdf: { type: string, description: The PDF bucket as s3://name }
-            audio: { type: string, description: The audio bucket as s3://name }
-            receipts: { type: string, enum: [sql, dynamo] }
-            email: { type: string, enum: [console, smtp, ses] }
-            emailQueue: { type: string, enum: [none, sqs] }
+            llm:
+              type: string
+              enum:
+                - agentcore
+                - local-fixture
+            agentRuntimeArn:
+              type: string
+            agentQualifier:
+              type: string
+              description: The AgentCore endpoint
+              DEFAULT unless AGENT_QUALIFIER is set: null
+            speech:
+              type: string
+              enum:
+                - transcribe
+                - local-fixture
+                - unavailable
+            sqlConnection:
+              type: string
+              description: The RDS connection
+              without the password: null
+            docStore:
+              type: string
+              enum:
+                - dynamo
+                - memory
+                - sqlite
+            docStoreTarget:
+              type: string
+            pdf:
+              type: string
+              description: The PDF bucket as s3://name
+            audio:
+              type: string
+              description: The audio bucket as s3://name
+            receipts:
+              type: string
+              enum:
+                - sql
+                - dynamo
+            email:
+              type: string
+              enum:
+                - console
+                - smtp
+                - ses
+                - local-outbox
+            emailQueue:
+              type: string
+              enum:
+                - none
+                - sqs
         queue:
           type: object
           properties:
-            pending: { type: integer }
+            pending:
+              type: integer
 paths:
+  /auth/login:
+    post:
+      tags:
+        - provider
+      summary: Local demo provider sign-in (501 outside local modes)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Local doctor session and local provider key
+        "400":
+          description: Invalid body
+        "401":
+          description: Invalid credentials
+        "501":
+          description: Production provider sign-in is not configured
+  /auth/link:
+    post:
+      tags:
+        - patient
+      summary: Check patient DOB and a ready bearer link for the original role form
+      description: The role selects a presentation; both roles use the same
+        bearer-link permission. Existing GET summary APIs still accept the link
+        directly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - dob
+                - role
+              properties:
+                token:
+                  type: string
+                dob:
+                  type: string
+                  format: date
+                role:
+                  type: string
+                  enum:
+                    - patient
+                    - caregiver
+      responses:
+        "200":
+          description: Patient or caregiver session marker
+        "400":
+          description: Invalid body
+        "401":
+          description: Invalid token or DOB
+        "409":
+          description: Local demo alias has no submitted plan yet
+        "410":
+          description: Link expired
+        "425":
+          description: Processing
+        "500":
+          description: Processing failed
   /health:
     get:
       summary: Liveness, clock, configuration source and active providers
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
   /patients:
     get:
-      tags: [provider]
-      security: [{ providerKey: [] }]
-      summary: "Task 1 of the backend tasks doc: the patient list from the SQL patients table, with ID, DOB, FirstName, LastName, ZipCode, email, phoneNumber, caregiverEmail, caregiverName"
-      parameters:
-        - $ref: "#/components/parameters/providerKeyHeader"
+      tags:
+        - provider
+      security:
+        - providerKey: []
+      summary: "Task 1 of the backend tasks doc: the patient list from the SQL
+        patients table, with ID, DOB, FirstName, LastName, ZipCode, email,
+        phoneNumber, caregiverEmail, caregiverName"
       responses:
         "200":
           description: Patients
@@ -225,164 +596,532 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [patients]
+                required:
+                  - patients
                 properties:
-                  patients: { type: array, items: { $ref: "#/components/schemas/Patient" } }
-        "401": { description: Missing or wrong x-provider-key, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
-  /patients/{id}:
-    get:
-      tags: [provider]
-      security: [{ providerKey: [] }]
-      summary: One patient, with the active link once generated
-      parameters:
-        - $ref: "#/components/parameters/providerKeyHeader"
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        "200": { description: Patient, content: { application/json: { schema: { $ref: "#/components/schemas/PatientDetail" } } } }
-        "404": { description: patient_not_found }
-  /ingest:
+                  patients:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Patient"
+        "401":
+          description: Missing or wrong x-provider-key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
-      tags: [provider]
-      security: [{ providerKey: [] }]
-      summary: "Task 3 of the backend tasks doc: ingest a discharge summary for a patient; 202 before the agent runs"
-      description: |
-        JSON body { data, type, patientID } (the tasks doc). type "text": data is the discharge summary text.
-        type "pdf": data is the PDF as base64 (a data:application/pdf;base64, prefix is accepted); the PDF is
-        converted with pdfToText and stored in S3 emrpdf-rh as <sumId>.pdf. Any other type answers
-        400 { statusCode: 400, message: "type must be text or pdf" }.
-        The random path (sumId) is stored in the SQL activeLinks table and is the DynamoDB uid of the summary
-        item. Before the response, a PDF is converted with pdfToText (a PDF with no readable text answers 400
-        unreadable_pdf and nothing is saved) and the text, pasted or extracted, is saved on the item as raw-text.
-        The response comes at once; then, asynchronously: the text goes to the DischargeAI agent on AgentCore
-        (session id = the sumId) and the call is awaited (it can take minutes), the agent's whole response is
-        saved as llm-summary with sum-id on the same item (expiresAt = now + 30 days), and the link is emailed
-        to the patient's email and to caregiverEmail whatever status the agent gave. Nothing is translated.
-        The earlier multipart form (patientId + one of text, file, audio) is kept as an alias; audio comes from
-        the architecture diagram and goes to S3 emraudio-rh.
+      tags:
+        - provider
+      security:
+        - providerKey: []
+      summary: Register a patient ID and DOB or match an existing patient
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [data, type, patientID]
+              required:
+                - ID
+                - DOB
               properties:
-                data: { type: string, description: "The text (type text) or the PDF as base64 (type pdf)" }
-                type: { type: string, enum: [text, pdf] }
-                patientID: { oneOf: [{ type: string }, { type: integer }], description: "The patient's ID from GET /patients (text or number)" }
+                ID:
+                  type: string
+                  maxLength: 64
+                DOB:
+                  type: string
+                  format: date
+                FirstName:
+                  type: string
+                LastName:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                caregiverEmail:
+                  type: string
+                  format: email
+                preferredLanguage:
+                  type: string
+                  enum:
+                    - en
+                    - es
+                    - zh
+                    - ar
+      responses:
+        "200":
+          description: Existing ID and DOB matched
+        "201":
+          description: Patient created
+        "400":
+          description: Invalid registration or date
+        "401":
+          description: Provider key required
+        "409":
+          description: ID already exists with another DOB
+  /patients/{id}:
+    get:
+      tags:
+        - provider
+      security:
+        - providerKey: []
+      summary: One patient, with the active link once generated
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Patient
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientDetail"
+        "404":
+          description: patient_not_found
+  /ingest:
+    post:
+      tags:
+        - provider
+      security:
+        - providerKey: []
+      summary: "Task 3 of the backend tasks doc: ingest a discharge summary for a
+        patient; 202 before the agent runs"
+      description: >-
+        JSON body { data, type, patientID } (the tasks doc). type "text": data
+        is the discharge summary text.
+
+        type "pdf": data is the PDF as base64 (a data:application/pdf;base64,
+        prefix is accepted); the PDF is
+
+        converted with pdfToText and stored in S3 emrpdf-rh as <sumId>.pdf. Any
+        other type answers
+
+        400 { statusCode: 400, message: "type must be text or pdf" }.
+
+        The random path (sumId) is stored in the SQL activeLinks table and is
+        the DynamoDB uid of the summary
+
+        item. Before the response, a PDF is converted with pdfToText (a PDF with
+        no readable text answers 400
+
+        unreadable_pdf and nothing is saved) and the text, pasted or extracted,
+        is saved on the item as raw-text.
+
+        The response comes at once; then, asynchronously: the text goes to the
+        DischargeAI agent on AgentCore
+
+        (session id = the sumId) and the call is awaited (it can take minutes),
+        the agent's whole response is
+
+        saved as llm-summary with sum-id on the same item (expiresAt = now + 30
+        days), and the link is emailed
+
+        to the patient's email and to caregiverEmail whatever status the agent
+        gave. Nothing is translated.
+
+        The earlier multipart form (patientId + one of text, file, audio) is
+        kept as an alias; audio comes from
+
+        the architecture diagram and goes to S3 emraudio-rh.
+
+        The opt-in local-agentcore mode uses local stores and captured email
+        instead of AWS storage/email.
+
+        Audio returns 501 when no live speech provider is configured.
+
+
+        Send DOB with patientID to validate the identity and append to the
+        active 30-day plan. The link and original expiry remain unchanged;
+        appended notes regenerate the plan and clear translated caches. Omit DOB
+        for the legacy independent-plan API. Expired plans start a new period.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+                - type
+                - patientID
+              properties:
+                data:
+                  type: string
+                  description: The text (type text) or the PDF as base64 (type pdf)
+                type:
+                  type: string
+                  enum:
+                    - text
+                    - pdf
+                patientID:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                  description: The patient's ID from GET /patients (text or number)
+                DOB:
+                  type: string
+                  format: date
+                  description: Validated patient DOB; selects append behavior for the active
+                    30-day plan
             examples:
               text:
-                value: { type: text, patientID: "1", data: "New medications:\n- Furosemide 40 mg by mouth once daily for swelling" }
+                value:
+                  type: text
+                  patientID: "1"
+                  data: |-
+                    New medications:
+                    - Furosemide 40 mg by mouth once daily for swelling
           multipart/form-data:
             schema:
               type: object
-              required: [patientId]
+              required:
+                - patientId
               properties:
-                patientId: { type: string }
-                text: { type: string, description: Pasted EMR text }
-                file: { type: string, format: binary, description: PDF }
-                audio: { type: string, format: binary, description: "Dictation (wav, mp3, m4a, webm, ogg, flac); stored in the audio bucket as <sumId>.<ext>" }
+                patientId:
+                  type: string
+                text:
+                  type: string
+                  description: Pasted EMR text
+                file:
+                  type: string
+                  format: binary
+                  description: PDF
+                audio:
+                  type: string
+                  format: binary
+                  description: Dictation (wav, mp3, m4a, webm, ogg, flac); stored in the audio
+                    bucket as <sumId>.<ext>
+                DOB:
+                  type: string
+                  format: date
+                  description: Validated patient DOB; selects append behavior for the active
+                    30-day plan
       responses:
-        "202": { description: ingestion started, content: { application/json: { schema: { $ref: "#/components/schemas/Accepted" } } } }
-        "400": { description: "type must be text or pdf, missing patientID or data, empty_input, multiple_inputs, unreadable_pdf, input_too_long, or validation error", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
-        "401": { description: Missing or wrong x-provider-key }
-        "404": { description: patient_not_found }
-        "413": { description: file_too_large }
+        "202":
+          description: ingestion started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "400":
+          description: type must be text or pdf, missing patientID or data, empty_input,
+            multiple_inputs, unreadable_pdf, input_too_long, or validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or wrong x-provider-key
+        "404":
+          description: patient_not_found
+        "409":
+          description: Patient DOB mismatch or patient currently processing
+        "413":
+          description: file_too_large
+        "501":
+          description: live_dictation_unavailable in local-agentcore mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /jobs/{jobId}:
     get:
-      tags: [provider]
-      security: [{ providerKey: [] }]
+      tags:
+        - provider
+      security:
+        - providerKey: []
       summary: Follow the 202 (stage and run metadata; no patient text)
       parameters:
-        - $ref: "#/components/parameters/providerKeyHeader"
-        - { name: jobId, in: path, required: true, schema: { type: string } }
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        "200": { description: Job, content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } } }
-        "404": { description: job_not_found }
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: job_not_found
   /synthesize:
     post:
-      tags: [provider]
-      security: [{ providerKey: [] }]
+      tags:
+        - provider
+      security:
+        - providerKey: []
       summary: Run the DischargeAI agent again, or on any text
-      description: |
-        `{ text }` sends the text to the agent in a fresh session and returns its response without storing anything.
-        `{ sumId }` (or `linkId`) sends the raw text stored for the summary to the agent again, with the sum-id as the
-        session id, replaces llm-summary with the new response, and emails the patient if the link had not been sent.
+      description: >
+        `{ text }` sends the text to the agent in a fresh session and returns
+        its response without storing anything.
+
+        `{ sumId }` (or `linkId`) sends the raw text stored for the summary to
+        the agent again, with the sum-id as the
+
+        session id, replaces llm-summary with the new response, and emails the
+        patient if the link had not been sent.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/SynthesizeRequest" }
+            schema:
+              $ref: "#/components/schemas/SynthesizeRequest"
       responses:
-        "200": { description: The agent's response, content: { application/json: { schema: { $ref: "#/components/schemas/SynthesizeResponse" } } } }
-        "400": { description: "empty_input or invalid_link" }
-        "404": { description: link_not_found }
-        "409": { description: "job_in_progress (the ingest job has not finished) or no_source_text" }
-        "410": { description: link_expired or link_purged }
-        "500": { description: The agent failed or timed out }
+        "200":
+          description: The agent's response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SynthesizeResponse"
+        "400":
+          description: empty_input or invalid_link
+        "404":
+          description: link_not_found
+        "409":
+          description: job_in_progress (the ingest job has not finished) or no_source_text
+        "410":
+          description: link_expired or link_purged
+        "500":
+          description: The agent failed or timed out
   /llm-sumary:
     get:
-      tags: [patient]
-      summary: "Task 4 of the backend tasks doc (spelled so): the agent's response saved on the DynamoDB item for a summary id"
+      tags:
+        - patient
+      summary: "Task 4 of the backend tasks doc (spelled so): the agent's response
+        saved on the DynamoDB item for a summary id"
       parameters:
         - $ref: "#/components/parameters/sumIdHyphen"
         - $ref: "#/components/parameters/sumIdUnderscore"
       responses:
-        "200": { description: The item's llm-summary, as the agent returned it, content: { application/json: { schema: { $ref: "#/components/schemas/LlmSummaryView" } } } }
-        "400": { description: "missing_sum_id or invalid_link", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
-        "404": { description: link_not_found }
-        "410": { description: link_expired (checked at read time, before any purge) or link_purged }
-        "425": { description: "processing (the agent is still working); body carries { stage, jobId }" }
-        "500": { description: processing_failed (the agent run failed) }
+        "200":
+          description: The item's llm-summary
+          as the agent returned it: null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmSummaryView"
+        "400":
+          description: missing_sum_id or invalid_link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: link_not_found
+        "410":
+          description: link_expired (checked at read time
+          before any purge) or link_purged: null
+        "425":
+          description: processing (the agent is still working); body carries { stage,
+            jobId }
+        "500":
+          description: processing_failed (the agent run failed)
   /llm-summary:
     get:
-      tags: [patient]
+      tags:
+        - patient
       summary: The same handler as /llm-sumary, correctly spelled
       parameters:
         - $ref: "#/components/parameters/sumIdHyphen"
         - $ref: "#/components/parameters/sumIdUnderscore"
       responses:
-        "200": { description: The item's llm-summary, content: { application/json: { schema: { $ref: "#/components/schemas/LlmSummaryView" } } } }
-        "400": { description: "missing_sum_id or invalid_link" }
-        "404": { description: link_not_found }
-        "410": { description: link_expired or link_purged }
-        "425": { description: processing }
-        "500": { description: processing_failed }
+        "200":
+          description: The item's llm-summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmSummaryView"
+        "400":
+          description: missing_sum_id or invalid_link
+        "404":
+          description: link_not_found
+        "410":
+          description: link_expired or link_purged
+        "425":
+          description: processing
+        "500":
+          description: processing_failed
   /translation:
     get:
-      tags: [patient]
-      summary: "Task 5 of the backend tasks doc: not built yet"
+      tags:
+        - patient
+      summary: Translate generated plan cards through the AI-Infra translation and
+        verification agent
+      parameters:
+        - name: lang
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - en
+              - es
+              - zh
+              - ar
+        - name: sum_id
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
-        "501": { description: not_implemented, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "200":
+          description: English source or translatedPlan with translationStatus and
+            translationProblems, taken from the agent's stored response
+        "400":
+          description: Unsupported language or invalid bearer link
+        "404":
+          description: Unknown plan, or no translation for that language
+        "410":
+          description: Expired plan
+        "425":
+          description: Plan processing
+        "500":
+          description: Plan generation failed
   /summary:
     get:
-      tags: [patient]
-      summary: "Earlier spelling of task 4 (?link=); the same body as /llm-sumary"
+      tags:
+        - patient
+      summary: Earlier spelling of task 4 (?link=); the same body as /llm-sumary
       parameters:
         - $ref: "#/components/parameters/link"
       responses:
-        "200": { description: The item's llm-summary, content: { application/json: { schema: { $ref: "#/components/schemas/LlmSummaryView" } } } }
-        "400": { description: invalid_link }
-        "404": { description: link_not_found }
-        "410": { description: link_expired or link_purged }
-        "425": { description: processing }
-        "500": { description: processing_failed }
+        "200":
+          description: The item's llm-summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmSummaryView"
+        "400":
+          description: invalid_link
+        "404":
+          description: link_not_found
+        "410":
+          description: link_expired or link_purged
+        "425":
+          description: processing
+        "500":
+          description: processing_failed
   /translate:
     get:
-      tags: [patient]
-      summary: "Earlier spelling of task 5: not built yet"
+      tags:
+        - patient
+      summary: Translate generated plan cards through the AI-Infra translation and
+        verification agent
+      parameters:
+        - name: lang
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - en
+              - es
+              - zh
+              - ar
+        - name: sum_id
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
-        "501": { description: not_implemented, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "200":
+          description: English source or translatedPlan with translationStatus and
+            translationProblems, taken from the agent's stored response
+        "400":
+          description: Unsupported language or invalid bearer link
+        "404":
+          description: Unknown plan, or no translation for that language
+        "410":
+          description: Expired plan
+        "425":
+          description: Plan processing
+        "500":
+          description: Plan generation failed
   /p/{token}:
     get:
-      tags: [patient]
-      summary: The patient's link with the token in the path; the same body as /llm-sumary
+      tags:
+        - patient
+      summary: The patient's link with the token in the path; the same body as
+        /llm-sumary
       parameters:
-        - { name: token, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }, description: The 43-character link id }
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{43}$
+          description: The 43-character link id
       responses:
-        "200": { description: The item's llm-summary, content: { application/json: { schema: { $ref: "#/components/schemas/LlmSummaryView" } } } }
-        "400": { description: invalid_link }
-        "404": { description: link_not_found }
-        "410": { description: link_expired or link_purged }
-        "425": { description: processing }
-        "500": { description: processing_failed }
+        "200":
+          description: The item's llm-summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmSummaryView"
+        "400":
+          description: invalid_link
+        "404":
+          description: link_not_found
+        "410":
+          description: link_expired or link_purged
+        "425":
+          description: processing
+        "500":
+          description: processing_failed
+  /read-aloud:
+    post:
+      tags:
+        - patient
+      summary: Read a displayed patient-plan section using ElevenLabs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - language
+                - text
+              properties:
+                token:
+                  type: string
+                language:
+                  type: string
+                  enum:
+                    - en
+                    - es
+                    - zh
+                    - ar
+                text:
+                  type: string
+                  maxLength: 5000
+      responses:
+        "200":
+          description: Generated audio; never cached
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid body or text not in the plan
+        "404":
+          description: Unknown bearer link
+        "409":
+          description: Load the requested translated plan first
+        "410":
+          description: Link expired or purged
+        "425":
+          description: Plan processing
+        "429":
+          description: Rate limit
+        "500":
+          description: Audio provider failed
+        "501":
+          description: ElevenLabs not configured

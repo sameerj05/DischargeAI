@@ -186,6 +186,16 @@ export class PatientsRepo {
     return Number(row?.n ?? 0);
   }
 
+  async create(input: { id: string; dateOfBirth: string; firstName?: string; lastName?: string; email?: string; caregiverEmail?: string; preferredLanguage?: string }): Promise<Patient> {
+    const map = await this.columnMap();
+    if (!map.id || !map.dateOfBirth) throw new Error("Patient registration requires ID and DOB columns");
+    const fields: [Field, string | undefined][] = [["id", input.id], ["dateOfBirth", input.dateOfBirth], ["firstName", input.firstName], ["lastName", input.lastName],
+      ["email", input.email], ["caregiverEmail", input.caregiverEmail], ["preferredLanguage", input.preferredLanguage]];
+    const supplied = fields.filter(([field, value]) => map[field] && value !== undefined);
+    await this.db.run(`INSERT INTO ${quote(this.table)} (${supplied.map(([field]) => quote(map[field]!)).join(", ")}) VALUES (${supplied.map(() => "?").join(", ")})`, supplied.map(([, value]) => value!));
+    return (await this.getById(input.id))!;
+  }
+
 }
 
 function contractField(key: (typeof CONTRACT_PATIENT_KEYS)[number]): Field {

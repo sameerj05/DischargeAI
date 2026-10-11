@@ -67,7 +67,7 @@ export class TranscribeMedicalSpeechToText implements SpeechToText {
   async transcribe(input: SpeechToTextInput): Promise<SpeechToTextResult> {
     const bucket = this.opts.audioBucket;
     const outputBucket = this.opts.outputBucket ?? bucket;
-    if (!bucket || !outputBucket) throw new Error("SPEECH_PROVIDER=transcribe needs AUDIO_BUCKET (and optionally TRANSCRIBE_OUTPUT_BUCKET)");
+    if (!bucket || !outputBucket) throw new Error("Transcribe Medical needs AUDIO_BUCKET (and optionally TRANSCRIBE_OUTPUT_BUCKET)");
     const t0 = Date.now();
     const jobName = `dischargeai-${randomUUID()}`;
     const format = mediaFormatFor(input.mimeType, input.fileName);

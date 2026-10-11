@@ -12,24 +12,32 @@ export interface AgentRun {
   latencyMs: number;
 }
 
+/** The operations consumed by the ingest pipeline; local verification supplies a fixture provider. */
+export interface AgentProvider {
+  readonly name: string;
+  readonly runtimeArn: string;
+  invoke(notes: string, sessionId: string): Promise<AgentRun>;
+}
+
 /**
  * The team's DischargeAI agent on Amazon Bedrock AgentCore Runtime (AI-Infra branch, entrypoint
- * agentcore_app.py). Request body {"notes": "<clinician text>"}; the live runtime answers
- * {"status", "flags", "summary", "plan"} and that whole object is kept as it is. The session id is
+ * agentcore_app.py). Request body {"notes": "<clinician text>"}; source responses include
+ * {"status", "flags", "summary", "plan"}, while the hackathon runtime uses {"result", "status", "flags"}.
+ * The whole response is kept as it is. The session id is
  * the summary's sum-id, so one summary is one AgentCore session (and one microVM).
  * A run can take minutes: the request times out after AGENT_TIMEOUT_MS (AgentCore's own limit for a
  * synchronous call is 15 minutes), and it is never retried, because a retry would run the whole
  * graph again.
  * IAM: bedrock-agentcore:InvokeAgentRuntime on AGENT_RUNTIME_ARN.
  */
-export class DischargeAgent {
+export class DischargeAgent implements AgentProvider {
   readonly name = "agentcore";
   private readonly client: BedrockAgentCoreClient;
 
   constructor(
-    private readonly opts: { runtimeArn: string; qualifier?: string; region: string; timeoutMs: number; log?: Logger },
+    private readonly opts: { runtimeArn: string; qualifier?: string; region: string; timeoutMs: number; log?: Logger; client?: BedrockAgentCoreClient },
   ) {
-    this.client = new BedrockAgentCoreClient({
+    this.client = opts.client ?? new BedrockAgentCoreClient({
       region: opts.region,
       maxAttempts: 1,
       requestHandler: { connectionTimeout: 10_000, requestTimeout: opts.timeoutMs, throwOnRequestTimeout: true },
@@ -39,6 +47,8 @@ export class DischargeAgent {
   get runtimeArn(): string {
     return this.opts.runtimeArn;
   }
+
+  close(): void { this.client.destroy(); }
 
   async invoke(notes: string, sessionId: string): Promise<AgentRun> {
     if (sessionId.length < MIN_SESSION_ID_LENGTH) throw new Error(`AgentCore session ids must be at least ${MIN_SESSION_ID_LENGTH} characters (got ${sessionId.length})`);
@@ -54,6 +64,8 @@ export class DischargeAgent {
       }),
     );
     const text = (await res.response?.transformToString()) ?? "";
+    if (res.statusCode !== undefined && res.statusCode !== 200) throw new Error(`AgentCore returned status ${res.statusCode}`);
+    if (!text.trim()) throw new Error("AgentCore returned an empty response");
     const response = parseResponse(text);
     const latencyMs = Date.now() - t0;
     if (isAgentError(response)) throw new Error(`agent_error: ${String(response.error).slice(0, 300)}`);

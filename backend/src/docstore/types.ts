@@ -45,7 +45,7 @@ export interface SummaryItem {
 export type SummaryPatch = Partial<Omit<SummaryItem, "uid" | "createdAt" | "patientID">>;
 
 export interface SummaryStore {
-  readonly name: "dynamo";
+  readonly name: "dynamo" | "memory" | "sqlite";
   /** Where the items live, for logs and /health (the table). */
   readonly describe: string;
   put(item: SummaryItem): Promise<void>;

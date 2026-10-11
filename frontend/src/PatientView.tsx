@@ -1,0 +1,631 @@
+import { type CSSProperties, useState } from "react"
+import { Icon, BrandMark } from "./ui"
+import { type Session } from "./auth"
+import { useChecklist } from "./checklist"
+import {
+  mockDischargeByPatient,
+  type CheckItem,
+  type DischargePlan,
+  type Language,
+  type MedItem,
+} from "./data"
+import { t } from "./i18n"
+import { LanguagePicker } from "./LanguagePicker"
+import { FontSizeControl } from "./FontSizeControl"
+import { useFontScale } from "./fontScale"
+import { DeletionTimer } from "./DeletionTimer"
+import { useReadAloud } from "./useReadAloud"
+
+// ── Read Aloud ────────────────────────────────────────────────────────────────
+
+// Maps Language codes to BCP-47 tags for SpeechSynthesisUtterance.lang
+const LANG_TO_BCP47: Record<Language, string> = {
+  en: "en-US",
+  es: "es-ES",
+  zh: "zh-CN",
+  ar: "ar-SA",
+}
+
+type ReadAloudButtonProps = {
+  label: string        // aria-label describing what will be read
+  text: string         // the text to speak
+  lang: Language
+  speak: (text: string, lang?: string) => void
+  currentText: string  // the text currently being spoken (empty if idle)
+}
+
+function ReadAloudButton({ label, text, lang, speak, currentText }: ReadAloudButtonProps) {
+  const isActive = currentText === text
+  return (
+    <button
+      aria-label={isActive ? `Stop reading ${label}` : `Read aloud: ${label}`}
+      aria-pressed={isActive}
+      className={`read-aloud-btn${isActive ? " read-aloud-btn-active" : ""}`}
+      onClick={() => speak(text, LANG_TO_BCP47[lang])}
+      type="button"
+    >
+      <Icon name={isActive ? "speakerOff" : "speaker"} size={18} />
+    </button>
+  )
+}
+
+// ── A flag like "NEW" tints Care Teal; anything about duration or a higher dose
+// ("for N more days", "higher dose") tints Coral to draw more attention.
+function flagTone(flag: string): "new" | "caution" {
+  const lower = flag.toLowerCase()
+  if (lower.includes("more day") || lower.includes("higher dose")) {
+    return "caution"
+  }
+  return "new"
+}
+
+// Progress bar + "N of M complete" header shared by every checklist section.
+function ChecklistProgress({
+  done,
+  total,
+  language,
+}: {
+  done: number
+  total: number
+  language: Language
+}) {
+  const pct = total === 0 ? 0 : Math.round((done / total) * 100)
+  return (
+    <div className="track-progress">
+      <span className="track-progress-count">
+        {t(language, "progressComplete", { done, total })}
+      </span>
+      <div className="checklist-progress" aria-hidden="true">
+        <span style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+// A single big-tap-target checkbox row for a trackable item.
+function CheckRow({
+  id,
+  label,
+  detail,
+  checked,
+  onToggle,
+}: {
+  id: string
+  label: string
+  detail?: string
+  checked: boolean
+  onToggle: (id: string) => void
+}) {
+  return (
+    <li>
+      <button
+        aria-pressed={checked}
+        className={`track-item ${checked ? "is-done" : ""}`}
+        onClick={() => onToggle(id)}
+        type="button"
+      >
+        <span className="track-box">
+          {checked ? <Icon name="check" size={18} /> : null}
+        </span>
+        <span className="track-copy">
+          <span className="track-label">{label}</span>
+          {detail ? <span className="track-detail">{detail}</span> : null}
+        </span>
+      </button>
+    </li>
+  )
+}
+
+export function PatientView({
+  session,
+  onLogout,
+}: {
+  session: Session
+  onLogout: () => void
+}) {
+  const [language, setLanguage] = useState<Language>("en")
+  const { step, scale, setFontStep, decrease, increase } = useFontScale()
+  const { speak, stop, state } = useReadAloud()
+  const [activeText, setActiveText] = useState("")
+
+  const handleSpeak = (text: string, lang = "en-US") => {
+    if (activeText === text) {
+      stop()
+      setActiveText("")
+    } else {
+      setActiveText(text)
+      speak(text, lang)
+    }
+  }
+
+  // When speech ends naturally, clear activeText
+  const wrappedSpeak = (text: string, lang?: string) => {
+    handleSpeak(text, lang)
+  }
+
+  // Clear activeText when state goes idle externally (e.g. speech ended)
+  if (state === "idle" && activeText !== "") {
+    setActiveText("")
+  }
+
+  // TODO: replace with real backend call — GET /p/:token returns the
+  // discharge plan keyed by language (plus expiresAt) for the patient.
+  const record = session.patientId
+    ? mockDischargeByPatient[session.patientId]
+    : undefined
+  const plan = record?.byLang[language]
+  const isRtl = language === "ar"
+
+  const { isChecked, toggle, progressFor } = useChecklist(session.patientId)
+
+  return (
+    <div className="role-shell patient-shell">
+      <header className="role-header">
+        <div className="role-header-brand">
+          <div className="brand-mark">
+            <BrandMark size={26} />
+          </div>
+          <span>Discharge AI</span>
+        </div>
+        <button className="logout-button" onClick={onLogout} type="button">
+          <Icon name="logout" size={18} />
+          {t(language, "signOut")}
+        </button>
+      </header>
+
+      <main
+        className="patient-main"
+        dir={isRtl ? "rtl" : "ltr"}
+        style={{ "--patient-font-scale": scale } as CSSProperties}
+      >
+        <div className="patient-intro">
+          <div className="patient-intro-head">
+            <h1>{plan ? plan.title : session.displayName}</h1>
+            <ReadAloudButton
+              label="introduction"
+              text={`${plan ? plan.title : session.displayName}. ${t(language, "patientLede")}`}
+              lang={language}
+              speak={wrappedSpeak}
+              currentText={activeText}
+            />
+          </div>
+          <p className="patient-lede">{t(language, "patientLede")}</p>
+
+          {record ? (
+            <DeletionTimer createdAt={record.createdAt} language={language} />
+          ) : null}
+
+          <div className="patient-controls">
+            <LanguagePicker language={language} onChange={setLanguage} />
+            <FontSizeControl
+              language={language}
+              step={step}
+              onStep={setFontStep}
+              onDecrease={decrease}
+              onIncrease={increase}
+            />
+          </div>
+        </div>
+
+        {!plan ? (
+          <section className="patient-section" aria-live="polite">
+            <p>{t(language, "planUnavailable")}</p>
+          </section>
+        ) : (
+          <PatientPlan
+            plan={plan}
+            language={language}
+            isChecked={isChecked}
+            onToggle={toggle}
+            progressFor={progressFor}
+            speak={wrappedSpeak}
+            activeText={activeText}
+          />
+        )}
+
+        <p className="privacy-notice">
+          <Icon name="lock" size={14} />
+          {t(language, "privacyNotice")}
+        </p>
+      </main>
+    </div>
+  )
+}
+
+function PatientPlan({
+  plan,
+  language,
+  isChecked,
+  onToggle,
+  progressFor,
+  speak,
+  activeText,
+}: {
+  plan: DischargePlan
+  language: Language
+  isChecked: (id: string) => boolean
+  onToggle: (id: string) => void
+  progressFor: (ids: string[]) => { done: number; total: number }
+  speak: (text: string, lang?: string) => void
+  activeText: string
+}) {
+  // Progress across every trackable medication dose item (checkbox meds only).
+  const medIds = plan.medications.groups
+    .flatMap((g) => g.items)
+    .filter((m) => m.trackable)
+    .map((m) => m.id)
+  const medProgress = progressFor(medIds)
+
+  // ── Read-aloud text builders ──────────────────────────────────────────────
+  const medsText = [
+    t(language, "medicationsTitle") + ". " + plan.medications.intro,
+    ...plan.medications.groups.flatMap((grp) => [
+      grp.label + ".",
+      ...grp.items.map((m) => `${m.name}: ${m.reason}${m.flag ? ", " + m.flag : ""}.`),
+    ]),
+  ].join(" ")
+
+  const newMedsText = plan.newMedicines.length
+    ? [
+        t(language, "newMedicinesTitle") + ".",
+        ...plan.newMedicines.map((m) => `${m.name}. ${m.detail}`),
+      ].join(" ")
+    : ""
+
+  const stoppedMedsText = plan.stoppedMedicines.length
+    ? [
+        t(language, "stoppedMedicinesTitle") + ".",
+        ...plan.stoppedMedicines.map((m) => `${m.name}. ${m.detail}`),
+      ].join(" ")
+    : ""
+
+  const todosText = [
+    t(language, "todosTitle") + ".",
+    t(language, "labsTitle") + ".",
+    ...(plan.todos.labs.length
+      ? plan.todos.labs.map((i) => `${i.label}${i.detail ? ". " + i.detail : ""}.`)
+      : [t(language, "labsEmpty")]),
+    t(language, "appointmentsTitle") + ".",
+    ...plan.todos.appointments.map((i) => `${i.label}${i.detail ? ". " + i.detail : ""}.`),
+    ...(plan.todos.appointmentsNote ? [plan.todos.appointmentsNote] : []),
+    t(language, "careInstructionsTitle") + ".",
+    ...plan.todos.careInstructions.map((i) => `${i.label}${i.detail ? ". " + i.detail : ""}.`),
+  ].join(" ")
+
+  const generalText = plan.generalInstructions.length
+    ? [t(language, "generalInstructionsTitle") + ".", ...plan.generalInstructions].join(" ")
+    : ""
+
+  const warningText = [
+    plan.warningSigns.heading,
+    ...plan.warningSigns.signs.map((s) => s + "."),
+    plan.warningSigns.emergencyLine,
+  ].join(" ")
+
+  const whyText = plan.whyHospitalized.length
+    ? [t(language, "whyHospitalizedTitle") + ".", ...plan.whyHospitalized].join(" ")
+    : ""
+
+  return (
+    <>
+      <section className="patient-section" aria-labelledby="meds-head">
+        <div className="patient-section-head">
+          <h2 id="meds-head" className="patient-section-title">
+            <Icon name="pill" size={22} /> {t(language, "medicationsTitle")}
+          </h2>
+          <ReadAloudButton
+            label={t(language, "medicationsTitle")}
+            text={medsText}
+            lang={language}
+            speak={speak}
+            currentText={activeText}
+          />
+        </div>
+        <p className="patient-section-intro">{plan.medications.intro}</p>
+
+        {plan.medications.groups.map((grp) => (
+          <div className="med-group" key={grp.key}>
+            <h3 className="med-group-label">{grp.label}</h3>
+            {grp.key === "asNeeded" ? (
+              <ul className="med-plain-list">
+                {grp.items.map((med) => (
+                  <li className="med-plain" key={med.id}>
+                    <MedCopy med={med} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="track-list">
+                {grp.items.map((med) => (
+                  <li key={med.id}>
+                    <button
+                      aria-pressed={isChecked(med.id)}
+                      className={`track-item ${
+                        isChecked(med.id) ? "is-done" : ""
+                      }`}
+                      onClick={() => onToggle(med.id)}
+                      type="button"
+                    >
+                      <span className="track-box">
+                        {isChecked(med.id) ? (
+                          <Icon name="check" size={18} />
+                        ) : null}
+                      </span>
+                      <span className="track-copy">
+                        <MedCopy med={med} />
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </section>
+
+      {plan.newMedicines.length > 0 ? (
+        <section className="patient-section" aria-labelledby="new-meds-head">
+          <h2 id="new-meds-head" className="patient-section-title">
+            <span className="section-title-row">
+              <Icon name="pill" size={22} /> {t(language, "newMedicinesTitle")}
+            </span>
+            <ReadAloudButton
+              label={t(language, "newMedicinesTitle")}
+              text={newMedsText}
+              lang={language}
+              speak={speak}
+              currentText={activeText}
+            />
+          </h2>
+          <ul className="explainer-list">
+            {plan.newMedicines.map((item) => (
+              <li className="explainer-card" key={item.name}>
+                <strong>{item.name}</strong>
+                <span>{item.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {plan.stoppedMedicines.length > 0 ? (
+        <section className="patient-section" aria-labelledby="stopped-meds-head">
+          <h2 id="stopped-meds-head" className="patient-section-title">
+            <span className="section-title-row">
+              <Icon name="stop" size={22} /> {t(language, "stoppedMedicinesTitle")}
+            </span>
+            <ReadAloudButton
+              label={t(language, "stoppedMedicinesTitle")}
+              text={stoppedMedsText}
+              lang={language}
+              speak={speak}
+              currentText={activeText}
+            />
+          </h2>
+          <ul className="stopped-list">
+            {plan.stoppedMedicines.map((item) => (
+              <li className="stopped-item" key={item.name}>
+                <span className="stopped-icon" aria-hidden="true">
+                  <Icon name="stop" size={18} />
+                </span>
+                <span className="stopped-copy">
+                  <strong>{item.name}</strong>
+                  <span>{item.detail}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="patient-section" aria-labelledby="todos-head">
+        <h2 id="todos-head" className="patient-section-title">
+          <span className="section-title-row">
+            <Icon name="check" size={22} /> {t(language, "todosTitle")}
+          </span>
+          <ReadAloudButton
+            label={t(language, "todosTitle")}
+            text={todosText}
+            lang={language}
+            speak={speak}
+            currentText={activeText}
+          />
+        </h2>
+
+        <TodoChecklist
+          icon="activity"
+          title={t(language, "labsTitle")}
+          items={plan.todos.labs}
+          emptyLine={t(language, "labsEmpty")}
+          language={language}
+          isChecked={isChecked}
+          onToggle={onToggle}
+          progressFor={progressFor}
+        />
+
+        <TodoChecklist
+          icon="calendar"
+          title={t(language, "appointmentsTitle")}
+          items={plan.todos.appointments}
+          note={plan.todos.appointmentsNote}
+          language={language}
+          isChecked={isChecked}
+          onToggle={onToggle}
+          progressFor={progressFor}
+        />
+
+        <TodoChecklist
+          icon="document"
+          title={t(language, "careInstructionsTitle")}
+          items={plan.todos.careInstructions}
+          language={language}
+          isChecked={isChecked}
+          onToggle={onToggle}
+          progressFor={progressFor}
+        />
+      </section>
+
+      {plan.generalInstructions.length > 0 ? (
+        <section className="patient-section" aria-labelledby="general-head">
+          <h2 id="general-head" className="patient-section-title">
+            <span className="section-title-row">
+              <Icon name="document" size={22} />{" "}
+              {t(language, "generalInstructionsTitle")}
+            </span>
+            <ReadAloudButton
+              label={t(language, "generalInstructionsTitle")}
+              text={generalText}
+              lang={language}
+              speak={speak}
+              currentText={activeText}
+            />
+          </h2>
+          <ul className="general-list">
+            {plan.generalInstructions.map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section
+        className="patient-section warning-signs"
+        role="alert"
+        aria-labelledby="warning-head"
+      >
+        <h2 id="warning-head" className="warning-signs-title">
+          <span className="section-title-row">
+            <Icon name="warning" size={26} /> {plan.warningSigns.heading}
+          </span>
+          <ReadAloudButton
+            label="Warning signs"
+            text={warningText}
+            lang={language}
+            speak={speak}
+            currentText={activeText}
+          />
+        </h2>
+        <ul className="warning-signs-list">
+          {plan.warningSigns.signs.map((sign, index) => (
+            <li key={index}>{sign}</li>
+          ))}
+        </ul>
+        <p className="warning-signs-emergency">
+          <Icon name="warning" size={20} /> {plan.warningSigns.emergencyLine}
+        </p>
+      </section>
+
+      {plan.whyHospitalized.length > 0 ? (
+        <section className="patient-section" aria-labelledby="why-head">
+          <h2 id="why-head" className="patient-section-title">
+            <span className="section-title-row">
+              <Icon name="stethoscope" size={22} />{" "}
+              {t(language, "whyHospitalizedTitle")}
+            </span>
+            <ReadAloudButton
+              label={t(language, "whyHospitalizedTitle")}
+              text={whyText}
+              lang={language}
+              speak={speak}
+              currentText={activeText}
+            />
+          </h2>
+          <ul className="general-list">
+            {plan.whyHospitalized.map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </>
+  )
+}
+
+// hideNewFlag defaults true — NEW is always redundant here since the
+// New Medicines section already lists every new drug.
+// Shows only the duration/caution part of a flag (strips leading "NEW, ").
+function MedCopy({ med, hideNewFlag = true }: { med: MedItem; hideNewFlag?: boolean }) {
+  const isNewFlag = med.flag?.toUpperCase().startsWith("NEW")
+
+  // Strip "NEW" or "NEW, " prefix to show only the duration/caution text
+  const displayFlag = med.flag
+    ? med.flag.replace(/^NEW,?\s*/i, "").trim() || null
+    : null
+
+  const showFlag = !!(med.flag && !(hideNewFlag && isNewFlag && !displayFlag))
+
+  return (
+    <span className="med-text">
+      <span className="med-name-row">
+        <strong className="med-name">{med.name}</strong>
+        {showFlag && displayFlag ? (
+          <span className={`med-flag med-flag-${flagTone(med.flag!)}`}>
+            {displayFlag}
+          </span>
+        ) : showFlag && !isNewFlag ? (
+          <span className={`med-flag med-flag-${flagTone(med.flag!)}`}>
+            {med.flag}
+          </span>
+        ) : null}
+      </span>
+      <span className="med-reason">{med.reason}</span>
+    </span>
+  )
+}
+
+function TodoChecklist({
+  icon,
+  title,
+  items,
+  emptyLine,
+  note,
+  language,
+  isChecked,
+  onToggle,
+  progressFor,
+}: {
+  icon: "activity" | "calendar" | "document"
+  title: string
+  items: CheckItem[]
+  emptyLine?: string
+  note?: string
+  language: Language
+  isChecked: (id: string) => boolean
+  onToggle: (id: string) => void
+  progressFor: (ids: string[]) => { done: number; total: number }
+}) {
+  const progress = progressFor(items.map((i) => i.id))
+  return (
+    <div className="todo-group">
+      <div className="todo-group-head">
+        <h3 className="todo-group-title">
+          <Icon name={icon} size={18} /> {title}
+        </h3>
+        {items.length > 0 ? (
+          <ChecklistProgress
+            done={progress.done}
+            total={progress.total}
+            language={language}
+          />
+        ) : null}
+      </div>
+      {items.length === 0 ? (
+        <p className="todo-empty">{emptyLine}</p>
+      ) : (
+        <ul className="track-list">
+          {items.map((item) => (
+            <CheckRow
+              key={item.id}
+              id={item.id}
+              label={item.label}
+              detail={item.detail}
+              checked={isChecked(item.id)}
+              onToggle={onToggle}
+            />
+          ))}
+        </ul>
+      )}
+      {note ? <p className="todo-note">{note}</p> : null}
+    </div>
+  )
+}

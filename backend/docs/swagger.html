@@ -16,11 +16,11 @@
   "info": {
     "title": "DischargeAI backend",
     "version": "0.2.0",
-    "description": "Discharge summaries in (pasted text, a PDF, or dictated audio), a patient link out, every piece of\ndata self-destructs 30 days after it was created.\n\nSurface: the API note first, the team architecture diagram where the note is silent.\nProvider endpoints need the `x-provider-key` header. Patient endpoints are authenticated by the\nunguessable 256-bit link id (43 base64url characters) and need no header.\n\nThe summary is written by the team's DischargeAI agent on Amazon Bedrock AgentCore Runtime. The\nsum-id is the AgentCore session id, and the agent's response is stored and returned exactly as it\ncame back (on the live runtime: status, flags, summary, plan). Translation is not built yet:\nGET /translation and GET /translate answer 501.\n"
+    "description": "Discharge summaries in (pasted text, a PDF, or dictated audio), a patient link out, every piece of\ndata self-destructs 30 days after it was created.\n\nSurface: the API note first, the team architecture diagram where the note is silent.\nProvider endpoints need the `x-provider-key` header. Patient endpoints are authenticated by the\nunguessable 256-bit link id (43 base64url characters) and need no header.\n\nThe summary is written by the team's DischargeAI agent on Amazon Bedrock AgentCore Runtime. The\nsum-id is the AgentCore session id, and the agent's response is stored and returned exactly as it\ncame back (canonical: status, flags, summary, plan; the hackathon runtime returned legacy result text). Translation is not built yet:\nGET /translation and GET /translate answer 501.\n"
   },
   "servers": [
     {
-      "url": "http://localhost:4000"
+      "url": "/api"
     }
   ],
   "tags": [
@@ -296,10 +296,7 @@
             ]
           },
           "message": {
-            "type": "string",
-            "enum": [
-              "ingestion started"
-            ]
+            "type": "string"
           },
           "sumId": {
             "type": "string",
@@ -333,6 +330,9 @@
               "ingestion started"
             ],
             "description": "The same value as message (earlier name)"
+          },
+          "appended": {
+            "type": "boolean"
           }
         }
       },
@@ -467,6 +467,31 @@
           "service": {
             "type": "string"
           },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "aws",
+              "local-test",
+              "local-agentcore"
+            ]
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "liveAi": {
+                "type": "boolean"
+              },
+              "dictation": {
+                "type": "boolean"
+              },
+              "translation": {
+                "type": "boolean"
+              },
+              "readAloud": {
+                "type": "boolean"
+              }
+            }
+          },
           "clock": {
             "type": "object",
             "properties": {
@@ -536,7 +561,8 @@
               "llm": {
                 "type": "string",
                 "enum": [
-                  "agentcore"
+                  "agentcore",
+                  "local-fixture"
                 ]
               },
               "agentRuntimeArn": {
@@ -550,7 +576,9 @@
               "speech": {
                 "type": "string",
                 "enum": [
-                  "transcribe"
+                  "transcribe",
+                  "local-fixture",
+                  "unavailable"
                 ]
               },
               "sqlConnection": {
@@ -561,7 +589,9 @@
               "docStore": {
                 "type": "string",
                 "enum": [
-                  "dynamo"
+                  "dynamo",
+                  "memory",
+                  "sqlite"
                 ]
               },
               "docStoreTarget": {
@@ -587,7 +617,8 @@
                 "enum": [
                   "console",
                   "smtp",
-                  "ses"
+                  "ses",
+                  "local-outbox"
                 ]
               },
               "emailQueue": {
@@ -612,6 +643,113 @@
     }
   },
   "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "provider"
+        ],
+        "summary": "Local demo provider sign-in (501 outside local modes)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Local doctor session and local provider key"
+          },
+          "400": {
+            "description": "Invalid body"
+          },
+          "401": {
+            "description": "Invalid credentials"
+          },
+          "501": {
+            "description": "Production provider sign-in is not configured"
+          }
+        }
+      }
+    },
+    "/auth/link": {
+      "post": {
+        "tags": [
+          "patient"
+        ],
+        "summary": "Check patient DOB and a ready bearer link for the original role form",
+        "description": "The role selects a presentation; both roles use the same bearer-link permission. Existing GET summary APIs still accept the link directly.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "dob",
+                  "role"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "dob": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "patient",
+                      "caregiver"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Patient or caregiver session marker"
+          },
+          "400": {
+            "description": "Invalid body"
+          },
+          "401": {
+            "description": "Invalid token or DOB"
+          },
+          "409": {
+            "description": "Local demo alias has no submitted plan yet"
+          },
+          "410": {
+            "description": "Link expired"
+          },
+          "425": {
+            "description": "Processing"
+          },
+          "500": {
+            "description": "Processing failed"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Liveness, clock, configuration source and active providers",
@@ -678,6 +816,81 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "provider"
+        ],
+        "security": [
+          {
+            "providerKey": []
+          }
+        ],
+        "summary": "Register a patient ID and DOB or match an existing patient",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ID",
+                  "DOB"
+                ],
+                "properties": {
+                  "ID": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "DOB": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "FirstName": {
+                    "type": "string"
+                  },
+                  "LastName": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "caregiverEmail": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "preferredLanguage": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "es",
+                      "zh",
+                      "ar"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing ID and DOB matched"
+          },
+          "201": {
+            "description": "Patient created"
+          },
+          "400": {
+            "description": "Invalid registration or date"
+          },
+          "401": {
+            "description": "Provider key required"
+          },
+          "409": {
+            "description": "ID already exists with another DOB"
+          }
+        }
       }
     },
     "/patients/{id}": {
@@ -732,7 +945,7 @@
           }
         ],
         "summary": "Task 3 of the backend tasks doc: ingest a discharge summary for a patient; 202 before the agent runs",
-        "description": "JSON body { data, type, patientID } (the tasks doc). type \"text\": data is the discharge summary text.\ntype \"pdf\": data is the PDF as base64 (a data:application/pdf;base64, prefix is accepted); the PDF is\nconverted with pdfToText and stored in S3 emrpdf-rh as \u003csumId>.pdf. Any other type answers\n400 { statusCode: 400, message: \"type must be text or pdf\" }.\nThe random path (sumId) is stored in the SQL activeLinks table and is the DynamoDB uid of the summary\nitem. Before the response, a PDF is converted with pdfToText (a PDF with no readable text answers 400\nunreadable_pdf and nothing is saved) and the text, pasted or extracted, is saved on the item as raw-text.\nThe response comes at once; then, asynchronously: the text goes to the DischargeAI agent on AgentCore\n(session id = the sumId) and the call is awaited (it can take minutes), the agent's whole response is\nsaved as llm-summary with sum-id on the same item (expiresAt = now + 30 days), and the link is emailed\nto the patient's email and to caregiverEmail whatever status the agent gave. Nothing is translated.\nThe earlier multipart form (patientId + one of text, file, audio) is kept as an alias; audio comes from\nthe architecture diagram and goes to S3 emraudio-rh.\n",
+        "description": "JSON body { data, type, patientID } (the tasks doc). type \"text\": data is the discharge summary text.\ntype \"pdf\": data is the PDF as base64 (a data:application/pdf;base64, prefix is accepted); the PDF is\nconverted with pdfToText and stored in S3 emrpdf-rh as \u003csumId>.pdf. Any other type answers\n400 { statusCode: 400, message: \"type must be text or pdf\" }.\nThe random path (sumId) is stored in the SQL activeLinks table and is the DynamoDB uid of the summary\nitem. Before the response, a PDF is converted with pdfToText (a PDF with no readable text answers 400\nunreadable_pdf and nothing is saved) and the text, pasted or extracted, is saved on the item as raw-text.\nThe response comes at once; then, asynchronously: the text goes to the DischargeAI agent on AgentCore\n(session id = the sumId) and the call is awaited (it can take minutes), the agent's whole response is\nsaved as llm-summary with sum-id on the same item (expiresAt = now + 30 days), and the link is emailed\nto the patient's email and to caregiverEmail whatever status the agent gave. Nothing is translated.\nThe earlier multipart form (patientId + one of text, file, audio) is kept as an alias; audio comes from\nthe architecture diagram and goes to S3 emraudio-rh.\nThe opt-in local-agentcore mode uses local stores and captured email instead of AWS storage/email.\nAudio returns 501 when no live speech provider is configured.\n\nSend DOB with patientID to validate the identity and append to the active 30-day plan. The link and original expiry remain unchanged; appended notes regenerate the plan and clear translated caches. Omit DOB for the legacy independent-plan API. Expired plans start a new period.",
         "requestBody": {
           "required": true,
           "content": {
@@ -766,6 +979,11 @@
                       }
                     ],
                     "description": "The patient's ID from GET /patients (text or number)"
+                  },
+                  "DOB": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Validated patient DOB; selects append behavior for the active 30-day plan"
                   }
                 }
               },
@@ -802,6 +1020,11 @@
                     "type": "string",
                     "format": "binary",
                     "description": "Dictation (wav, mp3, m4a, webm, ogg, flac); stored in the audio bucket as \u003csumId>.\u003cext>"
+                  },
+                  "DOB": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Validated patient DOB; selects append behavior for the active 30-day plan"
                   }
                 }
               }
@@ -835,8 +1058,21 @@
           "404": {
             "description": "patient_not_found"
           },
+          "409": {
+            "description": "Patient DOB mismatch or patient currently processing"
+          },
           "413": {
             "description": "file_too_large"
+          },
+          "501": {
+            "description": "live_dictation_unavailable in local-agentcore mode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1033,17 +1269,49 @@
         "tags": [
           "patient"
         ],
-        "summary": "Task 5 of the backend tasks doc: not built yet",
-        "responses": {
-          "501": {
-            "description": "not_implemented",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
+        "summary": "Translate generated plan cards through the AI-Infra translation and verification agent",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "en",
+                "es",
+                "zh",
+                "ar"
+              ]
             }
+          },
+          {
+            "name": "sum_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "English source or translatedPlan with translationStatus and translationProblems, taken from the agent's stored response"
+          },
+          "400": {
+            "description": "Unsupported language or invalid bearer link"
+          },
+          "404": {
+            "description": "Unknown plan, or no translation for that language"
+          },
+          "410": {
+            "description": "Expired plan"
+          },
+          "425": {
+            "description": "Plan processing"
+          },
+          "500": {
+            "description": "Plan generation failed"
           }
         }
       }
@@ -1093,17 +1361,49 @@
         "tags": [
           "patient"
         ],
-        "summary": "Earlier spelling of task 5: not built yet",
-        "responses": {
-          "501": {
-            "description": "not_implemented",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
+        "summary": "Translate generated plan cards through the AI-Infra translation and verification agent",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "en",
+                "es",
+                "zh",
+                "ar"
+              ]
             }
+          },
+          {
+            "name": "sum_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "English source or translatedPlan with translationStatus and translationProblems, taken from the agent's stored response"
+          },
+          "400": {
+            "description": "Unsupported language or invalid bearer link"
+          },
+          "404": {
+            "description": "Unknown plan, or no translation for that language"
+          },
+          "410": {
+            "description": "Expired plan"
+          },
+          "425": {
+            "description": "Plan processing"
+          },
+          "500": {
+            "description": "Plan generation failed"
           }
         }
       }
@@ -1151,6 +1451,84 @@
           },
           "500": {
             "description": "processing_failed"
+          }
+        }
+      }
+    },
+    "/read-aloud": {
+      "post": {
+        "tags": [
+          "patient"
+        ],
+        "summary": "Read a displayed patient-plan section using ElevenLabs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "language",
+                  "text"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "es",
+                      "zh",
+                      "ar"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 5000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated audio; never cached",
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body or text not in the plan"
+          },
+          "404": {
+            "description": "Unknown bearer link"
+          },
+          "409": {
+            "description": "Load the requested translated plan first"
+          },
+          "410": {
+            "description": "Link expired or purged"
+          },
+          "425": {
+            "description": "Plan processing"
+          },
+          "429": {
+            "description": "Rate limit"
+          },
+          "500": {
+            "description": "Audio provider failed"
+          },
+          "501": {
+            "description": "ElevenLabs not configured"
           }
         }
       }

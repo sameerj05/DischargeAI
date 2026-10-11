@@ -1,0 +1,24 @@
+{
+  "name": "dischargeai",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "install:all": "npm --prefix backend ci && npm --prefix frontend ci",
+    "dev": "node scripts/dev.mjs",
+    "local": "node scripts/local.mjs",
+    "local:ai": "node scripts/local.mjs --live-ai",
+    "test:browser": "node scripts/local.mjs --browser-test",
+    "test:live": "node scripts/local.mjs --live-test",
+    "test:features": "node scripts/local.mjs --features-test",
+    "test:dictation:live": "node scripts/local.mjs --dictation-live-test",
+    "test:practice": "node scripts/practice.mjs",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix backend run typecheck && node scripts/build-frontend.mjs",
+    "test": "npm --prefix backend test",
+    "start": "npm --prefix backend start",
+    "docs": "npm --prefix backend run docs",
+    "docs:serve": "npm --prefix backend run docs:serve"
+  }
+}

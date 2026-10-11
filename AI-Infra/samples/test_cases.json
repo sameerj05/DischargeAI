@@ -1,0 +1,31 @@
+{
+  "note": "SYNTHETIC TEST PATIENTS - NOT REAL PHI. Run with: python -m dischargeai.run_cases",
+  "cases": [
+    {
+      "id": "structured_copd",
+      "input_type": "structured",
+      "description": "EHR-style discharge summary with a medication table, follow-ups, and return precautions.",
+      "sources": [
+        {
+          "name": "discharge_summary.txt",
+          "text": "DISCHARGE SUMMARY\nPatient: Test Patient A, 58 M\nAdmit: 10/3/2026  Discharge: 10/8/2026\nAttending: Dr. M. Okoye, Hospital Medicine\n\nPrincipal diagnosis: Acute exacerbation of COPD\nSecondary diagnoses: Tobacco use disorder; Hypertension\n\nHospital course: Treated with nebulized albuterol/ipratropium, IV methylprednisolone, transitioned to PO prednisone. Azithromycin started 10/6. SpO2 93% on room air at rest at discharge, no home O2 needed per ambulatory oximetry.\n\nDISCHARGE MEDICATIONS\n| Medication | Dose | Route | Frequency | Duration | Status |\n| Prednisone | 40 mg | PO | daily with breakfast | 2 more days, last dose 10/10/2026 | NEW |\n| Azithromycin | 250 mg | PO | daily | 2 more days, last dose 10/10/2026 | NEW |\n| Tiotropium (Spiriva HandiHaler) | 18 mcg | inhaled | daily | ongoing | NEW |\n| Fluticasone-salmeterol (Advair) 250/50 | 1 inhalation | inhaled | BID | ongoing | CONTINUE |\n| Albuterol HFA | 2 puffs | inhaled | q4h PRN shortness of breath or wheezing | ongoing | CONTINUE |\n| Amlodipine | 5 mg | PO | daily | ongoing | CONTINUE |\n| Nicotine patch | 21 mg/24 hr | transdermal | apply 1 new patch every morning | ongoing | NEW |\n\nDISCONTINUED: Ipratropium (Atrovent) inhaler - STOP. Replaced by tiotropium. Do not use both.\n\nFOLLOW-UP\n- PCP: Dr. Simmons, 10/15/2026 at 10:00 AM\n- Pulmonary function test: 11/5/2026 at 12:30 PM, Pulmonary Lab, 2nd floor\n- Pulmonology: Dr. Haddad, 11/5/2026 at 1:30 PM (same day, after PFT)\n- Pulmonary rehab referral placed; rehab office will call to schedule\n\nPATIENT INSTRUCTIONS\n- Stop smoking. Quitline: 1-800-QUIT-NOW\n- Rinse mouth and spit after each Advair dose\n- If the nicotine patch causes vivid dreams, remove it at bedtime\n- Walk 10-15 minutes twice a day, increase as tolerated\n- Flu and pneumococcal vaccines: declined inpatient, discuss at PCP visit\n\nRETURN PRECAUTIONS\n- Call PCP: more sputum than usual, sputum turns green or yellow, fever over 100.4 F\n- Call 911: severe shortness of breath not relieved by albuterol, blue lips or fingertips, confusion, chest pain"
+        }
+      ]
+    },
+    {
+      "id": "natural_language_gi_bleed",
+      "input_type": "natural_language",
+      "description": "Speech-to-text physician dictation plus a nurse teach-back phone call. Has self-corrections, sound-alike word splits, scattered facts, an unanswered patient question, and a dark-stool nuance.",
+      "sources": [
+        {
+          "name": "1_hospitalist_dictation.txt",
+          "text": "[speech-to-text transcript, hospitalist voice memo]\n\nalright dictating the discharge for test patient B, uh, seventy nine year old woman, came in october fourth with an upper G I bleed, she had a bleeding stomach ulcer, a gastric ulcer on the E G D on the fifth and they clipped it. the ulcer was from the ibuprofen she'd been taking for her back, and she was positive for H pylori. she got two units of blood, hemoglobin was six point nine and it's nine point four today and stable. going home today the eighth.\n\nokay meds. pan to pra zole forty milligrams by mouth twice a day, thirty minutes before breakfast and thirty minutes before dinner, for eight weeks, that's new. for the H pylori she's on triple therapy, amoxicillin one gram twice a day and clarithromycin five hundred milligrams twice a day, both for fourteen days, those are new.\n\niron, ferrous sulfate three twenty five milligrams once a day, no actually make it every other day, it absorbs better that way, new, she can take it at lunch.\n\nstop the ibuprofen, no N S A I D s, no advil no aleve. and her baby aspirin, the aspirin eighty one she was taking for prevention, that's stopped too.\n\ncontinue her levothyroxine seventy five micrograms every morning on an empty stomach and her amlodipine five milligrams daily. for back pain she can use tylenol, acetaminophen, up to three thousand milligrams a day.\n\nlabs, C B C in one week at her primary care visit with doctor brooks. G I follow up with doctor lin in six weeks. she needs an H pylori breath test at least four weeks after she finishes the antibiotics to make sure it's gone, G I will set that up. no alcohol. that's it."
+        },
+        {
+          "name": "2_nurse_teachback_call.txt",
+          "text": "[speech-to-text transcript, nurse discharge phone call, 2 speakers]\n\nNURSE: hi this is dana from five west, I'm calling to go over your discharge.\nPATIENT: oh hi dana.\nNURSE: so tell me, what would make you come back to the hospital?\nPATIENT: um if I throw up blood?\nNURSE: yes. throwing up blood, or throw up that looks like coffee grounds, black sticky tarry poop, feeling dizzy or like you might faint, or your heart racing. any of those, call nine one one or go to the E R.\nPATIENT: the iron makes my poop dark though right?\nNURSE: right, the iron can make your poop dark green or black, that's normal. but if it's sticky and tarry, or you feel dizzy with it, treat it like an emergency.\nPATIENT: okay. can I still take my fish oil?\nNURSE: hmm, good question, I'm not sure, I'll check with the doctor and call you back.\nNURSE: and the clarithromycin can make food taste like metal, that's normal. take all fourteen days of both antibiotics even if you feel fine.\nPATIENT: my son is going to set up my pill box tonight.\nNURSE: perfect."
+        }
+      ]
+    }
+  ]
+}

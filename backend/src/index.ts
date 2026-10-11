@@ -1,6 +1,7 @@
 import { buildApp } from "./app.js";
 import { loadRuntimeEnv } from "./bootstrap.js";
 import { createContext } from "./context.js";
+import { attachDictationSocket } from "./dictationSocket.js";
 
 const { env, secrets } = await loadRuntimeEnv();
 const ctx = await createContext({ env, secrets });
@@ -25,9 +26,11 @@ const server = app.listen(ctx.config.PORT, ctx.config.HOST, () => {
     `DischargeAI backend listening on http://${ctx.config.HOST}:${ctx.config.PORT} (docs at /docs)`,
   );
 });
+const dictation = attachDictationSocket(server, ctx);
 
 const shutdown = async (signal: string) => {
   ctx.log.info({ signal }, "shutting down");
+  dictation.close();
   server.close();
   await ctx.close();
   process.exit(0);

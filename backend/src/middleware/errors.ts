@@ -26,6 +26,10 @@ export function errorHandler(log: Logger): ErrorRequestHandler {
       res.status(413).json({ statusCode: 413, error: "file_too_large", message: anyErr.message });
       return;
     }
+    if (anyErr?.code?.startsWith("LIMIT_")) {
+      res.status(400).json({ statusCode: 400, error: "invalid_upload", message: "Unexpected or excessive upload fields" });
+      return;
+    }
     if (anyErr?.type === "entity.too.large") {
       res.status(413).json({ statusCode: 413, error: "file_too_large", message: "The request body is larger than MAX_UPLOAD_BYTES allows" });
       return;

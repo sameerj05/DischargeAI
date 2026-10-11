@@ -16,6 +16,7 @@ export interface PendingInput {
   sumId: string;
   kind: InputKind;
   file?: { buffer: Buffer; mimeType: string; fileName?: string };
+  appendAudio?: boolean;
 }
 
 export function epochSeconds(iso: string): number {
@@ -55,14 +56,16 @@ export async function runIngestJob(ctx: AppContext, jobId: string, pending?: Pen
     // 1. The clinician text is on the item already, except for audio, which is transcribed here
     //    (speech to text is too slow to wait for before answering) and then saved the same way.
     let text = item["raw-text"] ?? "";
-    if (!text) {
+    if (!text || pending?.appendAudio) {
       if (job.inputKind !== "audio" || !pending?.file) throw new Error("restart_before_transcription: the audio was lost when the process restarted");
       await setStage("transcribing");
       // Transcribe Medical reads the clip from the audio bucket by key.
       const r = await ctx.speechToText.transcribe({ audio: pending.file.buffer, mimeType: pending.file.mimeType, fileName: pending.file.fileName, audioKey: link.audioKey ?? undefined });
       await jobs.mergeMeta(jobId, { speechProvider: r.provider, transcribeJobName: r.jobName, transcribeMs: r.latencyMs }, clock.nowIso());
-      text = normalizeText(r.transcript);
-      if (!text) throw new Error("empty_input_after_transcription");
+      const transcript = normalizeText(r.transcript);
+      if (!transcript) throw new Error("empty_input_after_transcription");
+      text = pending?.appendAudio ? `${text}\n\nUpdate (${clock.nowIso()}):\n${transcript}` : transcript;
+      if (text.length > 200_000) throw new Error("combined_notes_too_long");
       await summaries.update(job.sumId, { "raw-text": text, meta: { ...(item.meta ?? {}), transcript: { provider: r.provider, jobName: r.jobName, latencyMs: r.latencyMs } } });
     }
 

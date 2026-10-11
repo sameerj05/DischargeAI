@@ -58,7 +58,7 @@ export const ConfigSchema = z.object({
   MYSQL_POOL_SIZE: int(5),
   /** AWS connection step 1: the public RDS certificate bundle (scripts/fetch-rds-bundle.sh). */
   RDS_CA_BUNDLE: z.string().default("certs/global-bundle.pem"),
-  /** The team's patient table in the same database (the infra branch reads `SELECT * FROM patientinfo`). Read-only for this backend. */
+  /** Patient table in the same database; registration requires INSERT permission. */
   PATIENTS_TABLE: z.string().regex(/^[A-Za-z0-9_]+$/, "a plain table name").default("patientinfo"),
 
   /** The team table (hash key uid, TTL expiresAt). Filled from the secret's dynamodb-table. */
@@ -75,6 +75,10 @@ export const ConfigSchema = z.object({
   AGENT_TIMEOUT_MS: int(15 * 60 * 1000),
 
   TRANSCRIBE_OUTPUT_BUCKET: optionalString,
+  TRANSCRIBE_STREAMING_REGION: z.string().default("us-west-2"),
+  ELEVENLABS_API_KEY: optionalString,
+  ELEVENLABS_VOICE_ID: z.string().regex(/^[A-Za-z0-9_-]+$/).default("21m00Tcm4TlvDq8ikWAM"),
+  ELEVENLABS_MODEL_ID: z.string().default("eleven_multilingual_v2"),
 
   /** The team contract's PDF bucket (`arn:aws:s3:::emrpdf-rh`). */
   PDF_BUCKET: z.string().default("emrpdf-rh"),
