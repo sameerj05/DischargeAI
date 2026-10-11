@@ -42,6 +42,13 @@ components:
       in: header
       name: x-provider-key
   parameters:
+    providerKeyHeader:
+      name: x-provider-key
+      in: header
+      required: true
+      description: Provider API key (the PROVIDER_API_KEY setting; defaults to dev-provider-key locally).
+      schema: { type: string, default: dev-provider-key }
+      example: dev-provider-key
     sumIdHyphen:
       name: sum-id
       in: query

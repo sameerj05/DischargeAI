@@ -42,6 +42,17 @@
       }
     },
     "parameters": {
+      "providerKeyHeader": {
+        "name": "x-provider-key",
+        "in": "header",
+        "required": true,
+        "description": "Provider API key (the PROVIDER_API_KEY setting; defaults to dev-provider-key locally).",
+        "schema": {
+          "type": "string",
+          "default": "dev-provider-key"
+        },
+        "example": "dev-provider-key"
+      },
       "sumIdHyphen": {
         "name": "sum-id",
         "in": "query",
@@ -767,6 +778,11 @@
           }
         ],
         "summary": "Task 1 of the backend tasks doc: the patient list from the SQL patients table, with ID, DOB, FirstName, LastName, ZipCode, email, phoneNumber, caregiverEmail, caregiverName",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/providerKeyHeader"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Patients",
@@ -889,6 +905,9 @@
         ],
         "summary": "One patient, with the active link once generated",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/providerKeyHeader"
+          },
           {
             "name": "id",
             "in": "path",
@@ -1070,6 +1089,9 @@
         ],
         "summary": "Follow the 202 (stage and run metadata; no patient text)",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/providerKeyHeader"
+          },
           {
             "name": "jobId",
             "in": "path",
