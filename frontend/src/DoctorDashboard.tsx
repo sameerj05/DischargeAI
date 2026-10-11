@@ -3,7 +3,6 @@ import { Icon, BrandMark } from "./ui"
 import { type Session } from "./auth"
 import { useTranscribeMedical } from "./useTranscribeMedical"
 import { extractPdfText } from "./extractPdfText"
-import { postIngest } from "./api"
 
 type Patient = {
   id: string
@@ -248,20 +247,11 @@ export function DoctorDashboard({
     URL.revokeObjectURL(url)
   }
 
-  const handleSend = async () => {
+  const handleSend = () => {
     if (!activeText || sending) return
     setSending(true)
-    try {
-      await postIngest({
-        data: activeText,
-        type: mode === "dictate" ? "dictation" : mode === "pdf" ? "pdf" : "text",
-        patientId: selectedPatient.id,
-      })
-    } catch (err) {
-      console.error("[ingest] Failed to send:", err)
-    } finally {
-      setSending(false)
-    }
+    // Simulate send — replace with real API call later
+    setTimeout(() => setSending(false), 2000)
   }
 
   return (
